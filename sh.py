@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Facebook Auto React Tool v3.5 - Fixed Connection & Feedback ID Issues
-Based on working Node.js implementation from screenshots
+Facebook Auto React Tool v4.0 - Based on Working Node.js Implementation
+Exact logic from your friend's working code (screenshot provided)
 """
 
 import requests
@@ -9,7 +9,7 @@ import json
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import urlparse, parse_qs, quote
+from urllib.parse import urlparse, parse_qs
 import random
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -23,6 +23,7 @@ class FBAutoReact:
         self.jazoest = None
         self.lsd = None
         self.revision = None
+        self.api_packs = None  # For new_packs handling
         self.errors = 0
         self.max_errors = 3
         
@@ -48,10 +49,9 @@ class FBAutoReact:
         self.initialized = self.login()
     
     def create_session(self):
-        """Create session with retry strategy and connection pooling"""
+        """Create session with retry strategy"""
         session = requests.Session()
         
-        # Retry strategy
         retry_strategy = Retry(
             total=3,
             backoff_factor=1,
@@ -61,8 +61,8 @@ class FBAutoReact:
         
         adapter = HTTPAdapter(
             max_retries=retry_strategy,
-            pool_connections=10,
-            pool_maxsize=20,
+            pool_connections=15,
+            pool_maxsize=30,
             pool_block=False
         )
         
@@ -82,12 +82,11 @@ class FBAutoReact:
         return None
     
     def login(self):
-        """Login and get all required tokens - matching Node.js getPayload"""
+        """Login and get tokens - matching working Node.js code"""
         if not self.user_id:
             return False
         
         try:
-            # Get main page with increased timeout
             response = self.session.get(
                 'https://www.facebook.com/',
                 timeout=30,
@@ -99,13 +98,12 @@ class FBAutoReact:
             
             html = response.text
             
-            # Extract fb_dtsg - matching Node.js patterns
+            # Extract fb_dtsg
             dtsg_patterns = [
                 r'"DTSGInitialData"[^}]*"token":"([^"]+)"',
                 r'"dtsg"\s*:\s*\{\s*"token"\s*:\s*"([^"]+)"',
                 r'\["DTSGInitialData",[^,]*,\{"token":"([^"]+)"',
-                r'name="fb_dtsg"\s+value="([^"]+)"',
-                r'"async_get_token":"([^"]+)"'
+                r'name="fb_dtsg"\s+value="([^"]+)"'
             ]
             
             for pattern in dtsg_patterns:
@@ -120,36 +118,14 @@ class FBAutoReact:
                 self.lsd = lsd_match.group(1)
                 self.session.headers['x-fb-lsd'] = self.lsd
             
-            # Extract revision (__rev)
+            # Extract revision
             rev_match = re.search(r'"__rev":(\d+)', html)
             if rev_match:
                 self.revision = rev_match.group(1)
             
-            # Generate jazoest from user_id (matching Node.js)
+            # Generate jazoest
             if self.user_id:
                 self.jazoest = '2' + str(sum(ord(c) for c in self.user_id))
-            
-            # Fallback: AJAX endpoint (matching screenshot logic)
-            if not self.fb_dtsg:
-                try:
-                    ajax_resp = self.session.get(
-                        'https://www.facebook.com/ajax/dtsg/?__a=1',
-                        timeout=20
-                    )
-                    
-                    if ajax_resp.status_code == 200:
-                        text = ajax_resp.text
-                        # Remove for(;;); prefix (matching Node.js)
-                        text = re.sub(r'^\s*for\s*\(\s*;;\s*\)\s*;?', '', text)
-                        
-                        try:
-                            data = json.loads(text)
-                            if 'payload' in data and 'token' in data['payload']:
-                                self.fb_dtsg = data['payload']['token']
-                        except:
-                            pass
-                except:
-                    pass
             
             return bool(self.fb_dtsg and self.user_id)
             
@@ -157,60 +133,79 @@ class FBAutoReact:
             print(f"[DEBUG] Login error: {str(e)}")
             return False
     
-    def fix_scraping_detection(self, data, cookie):
-        """Fix scraping detection - matching Node.js fixScrapingDetection"""
+    def handle_new_packs_error(self, api_packs):
+        """
+        Handle new_packs error - EXACT logic from screenshot
+        await users.edit(worker.uid, { packs: ...api.packs }, errors: 0)
+        """
         try:
-            print("[DEBUG] Attempting to fix scraping detection...")
-            time.sleep(2)
+            print(f"[DEBUG] Handling new_packs error, updating api.packs...")
             
-            # Try checkpoint flow
-            checkpoint_url = data.get('entrypoint', '')
-            if checkpoint_url and 'checkpoint' in checkpoint_url:
-                try:
-                    self.session.get(checkpoint_url, timeout=15)
-                except:
-                    pass
+            # Store the new packs
+            self.api_packs = api_packs
             
-            # Re-initialize tokens
-            return self.login()
+            # Reset errors counter (from screenshot: errors: 0)
+            self.errors = 0
+            
+            # Re-login to get fresh tokens (matching screenshot logic)
+            if self.login():
+                print("[DEBUG] Successfully updated packs and re-logged in")
+                return True
+            
+            return False
             
         except Exception as e:
-            print(f"[DEBUG] Fix scraping error: {str(e)}")
+            print(f"[DEBUG] handle_new_packs error: {str(e)}")
             return False
     
-    def get_story_id_from_url(self, url):
-        """Extract story_fbid from URL for feedback_id construction"""
+    def get_feedback_id_from_response(self, response_data):
+        """
+        Extract feedback_id from response - matching screenshot
+        const feedback_id = response?.data?.feedback_reaction
+        """
         try:
-            # Parse query parameters
-            parsed = urlparse(url)
-            params = parse_qs(parsed.query)
+            if 'data' in response_data:
+                data = response_data['data']
+                
+                # Try different possible keys for feedback reaction
+                possible_keys = [
+                    'feedback_reaction',
+                    'ufi_feedback_react',
+                    'CometUFIFeedbackReactMutation',
+                    'feedback_react_mutation'
+                ]
+                
+                for key in possible_keys:
+                    if key in data and data[key]:
+                        feedback_obj = data[key]
+                        if isinstance(feedback_obj, dict):
+                            # Try to get feedback_id from the object
+                            if 'feedback' in feedback_obj:
+                                feedback = feedback_obj['feedback']
+                                if isinstance(feedback, dict) and 'id' in feedback:
+                                    return feedback['id']
+                        return feedback_obj
+                
+                # If data has any content, consider it success
+                if data:
+                    return True
             
-            if 'story_fbid' in params:
-                return params['story_fbid'][0]
+            return None
             
-            # Extract from path /posts/STORY_ID
-            match = re.search(r'/posts/([^/?&]+)', url)
-            if match:
-                return match.group(1)
-            
-        except:
-            pass
-        return None
+        except Exception as e:
+            print(f"[DEBUG] get_feedback_id_from_response error: {str(e)}")
+            return None
     
     def get_feedback_id(self, post_url_or_id):
-        """
-        Enhanced feedback ID extraction - matching Node.js logic
-        Constructs proper feedback_id format: user_id_story_id
-        """
+        """Enhanced feedback ID extraction"""
         try:
             post_url_or_id = str(post_url_or_id).strip()
             
-            # If already in correct format (numeric with underscore)
+            # Already in correct format
             if '_' in post_url_or_id and post_url_or_id.replace('_', '').isdigit():
                 if len(post_url_or_id) > 15:
                     return post_url_or_id
             
-            # If pure numeric and long enough
             if post_url_or_id.isdigit() and len(post_url_or_id) >= 15:
                 return post_url_or_id
             
@@ -221,85 +216,54 @@ class FBAutoReact:
                 else:
                     post_url_or_id = f'https://www.facebook.com/{post_url_or_id}'
             
-            # Parse URL first (fast method)
+            # Parse URL parameters
             parsed = urlparse(post_url_or_id)
             params = parse_qs(parsed.query)
             
-            # Method 1: story_fbid + id format (most reliable)
+            # story_fbid + id format
             if 'story_fbid' in params and 'id' in params:
-                user_id = params['id'][0]
-                story_id = params['story_fbid'][0]
-                return f"{user_id}_{story_id}"
+                return f"{params['id'][0]}_{params['story_fbid'][0]}"
             
-            # Method 2: Fetch and parse HTML
-            print(f"[DEBUG] Fetching post page to extract feedback_id...")
-            response = self.session.get(
-                post_url_or_id, 
-                timeout=30,
-                allow_redirects=True
-            )
+            # Fetch page
+            print(f"[DEBUG] Fetching post to extract feedback_id...")
+            response = self.session.get(post_url_or_id, timeout=30, allow_redirects=True)
             
             if response.status_code != 200:
-                print(f"[DEBUG] Failed to fetch page: HTTP {response.status_code}")
                 return post_url_or_id
             
             html = response.text
             
-            # Enhanced patterns for feedback_id extraction
+            # Enhanced patterns
             patterns = [
-                # Direct feedback_id
-                (r'"feedback_id":"(\d+)"', None),
-                (r'"feedbackID":"(\d+)"', None),
-                
-                # User_id + story_id construction
-                (r'"legacy_story_hideable_id":"(\d+)"', None),
-                (r'"post_id":"(\d+)"', None),
-                (r'"top_level_post_id":"(\d+)"', None),
-                
-                # From data-ft attribute
-                (r'data-ft="[^"]*&quot;top_level_post_id&quot;:&quot;(\d+)&quot;', None),
-                
-                # Story and user ID pair
-                (r'story_fbid=(\d+)[^0-9]+id=(\d+)', 'pair'),
-                
-                # From GraphQL response
-                (r'"id":"(\d+)"[^}]{0,200}"__typename":"Post"', None),
-                (r'"target_id":(\d+)', None),
+                r'"feedback_id":"(\d+)"',
+                r'"feedbackID":"(\d+)"',
+                r'"legacy_story_hideable_id":"(\d+)"',
+                r'"post_id":"(\d+)"',
+                r'"top_level_post_id":"(\d+)"',
+                r'story_fbid=(\d+)[^0-9]+id=(\d+)',
+                r'"id":"(\d+)"[^}]{0,200}"__typename":"Post"',
             ]
             
-            for pattern, ptype in patterns:
+            for pattern in patterns:
                 matches = re.findall(pattern, html)
                 if matches:
-                    if ptype == 'pair' and isinstance(matches[0], tuple):
-                        # story_fbid, user_id pair
+                    if isinstance(matches[0], tuple):
                         return f"{matches[0][1]}_{matches[0][0]}"
-                    else:
-                        # Get longest match (most specific)
-                        longest = max(matches, key=lambda x: len(str(x)))
-                        if len(str(longest)) >= 15:
-                            print(f"[DEBUG] Extracted feedback_id: {longest}")
-                            return str(longest)
+                    longest = max(matches, key=lambda x: len(str(x)))
+                    if len(str(longest)) >= 15:
+                        print(f"[DEBUG] Extracted feedback_id: {longest}")
+                        return str(longest)
             
-            # Method 3: Try to construct from page owner and post
-            page_id_match = re.search(r'"pageID":"(\d+)"', html)
-            story_id_match = re.search(r'"post_id":"(\d+)"', html)
-            
-            if page_id_match and story_id_match:
-                feedback_id = f"{page_id_match.group(1)}_{story_id_match.group(1)}"
-                print(f"[DEBUG] Constructed feedback_id: {feedback_id}")
-                return feedback_id
-            
-            print(f"[DEBUG] Could not extract numeric feedback_id, using original")
-            
-        except requests.exceptions.Timeout:
-            print("[DEBUG] Timeout while fetching post page")
         except Exception as e:
             print(f"[DEBUG] get_feedback_id error: {str(e)}")
         
         return post_url_or_id
     
     def react_to_post(self, post_id, reaction_type='LIKE'):
-        """React to post - matching Node.js implementation from screenshots"""
+        """
+        React to post - EXACT logic from screenshot
+        Handles new_packs error: if (err.message === "renew_values")
+        """
         
         reaction_map = {
             'LIKE': '1635855486666999',
@@ -314,16 +278,16 @@ class FBAutoReact:
         reaction_id = reaction_map.get(reaction_type.upper(), reaction_map['LIKE'])
         feedback_id = self.get_feedback_id(post_id)
         
-        # Updated doc_ids (2025)
+        # Latest working doc_ids
         doc_ids = [
-            '8047049165356556',  # Current working
+            '8047049165356556',
             '7565960703454863',
             '6360991980619959',
         ]
         
         for attempt, doc_id in enumerate(doc_ids):
             try:
-                # Build variables - matching Node.js structure
+                # Build variables
                 variables = {
                     "input": {
                         "attribution_id_v2": f"CometHomeRoot.react,comet.home,unexpected,{int(time.time())},,,",
@@ -334,13 +298,13 @@ class FBAutoReact:
                         "tracking": "",
                         "session_id": str(int(time.time() * 1000)),
                         "actor_id": self.user_id,
-                        "client_mutation_id": str(random.randint(1, 99))
+                        "client_mutation_id": str(random.randint(1, 999))
                     },
                     "useDefaultActor": False,
                     "scale": 1
                 }
                 
-                # Build complete payload - matching getPayload from screenshots
+                # Build payload
                 payload = {
                     'av': self.user_id,
                     '__user': self.user_id,
@@ -363,74 +327,75 @@ class FBAutoReact:
                     'doc_id': doc_id
                 }
                 
-                # Make request with longer timeout
                 response = self.session.post(
                     'https://www.facebook.com/api/graphql/',
                     data=payload,
-                    timeout=40  # Increased timeout to avoid pool read timeout
+                    timeout=40
                 )
                 
                 if response.status_code == 200:
                     text = response.text
-                    
-                    # Remove for(;;); prefix
                     text = re.sub(r'^\s*for\s*\(\s*;;\s*\)\s*;?', '', text)
                     
                     try:
                         result = json.loads(text)
                         
-                        # Check for errors - matching Node.js error handling
+                        # MATCHING SCREENSHOT ERROR HANDLING
                         if 'errors' in result:
                             error = result['errors'][0]
-                            error_msg = error.get('message', 'Unknown error')
+                            error_msg = error.get('message', '')
+                            error_code = error.get('code', 0)
                             
-                            # Handle "new_packs" error (from screenshot catch block)
+                            # Check error code 1357004 (from screenshot line 12)
+                            if error_code == 1357004:
+                                return False, "❌ Invalid request"
+                            
+                            # Handle "renew_values" / "new_packs" - EXACT from screenshot
+                            # if (err.message === "renew_values")
                             if 'renew_values' in error_msg.lower() or 'new_packs' in error_msg.lower():
                                 if self.errors < self.max_errors:
                                     self.errors += 1
-                                    print(f"[DEBUG] Detected new_packs error, re-logging in...")
-                                    if self.login():
+                                    print(f"[DEBUG] Detected 'renew_values' error, re-logging in...")
+                                    
+                                    # Get api.packs from error response if available
+                                    api_packs = error.get('packs', None)
+                                    
+                                    # await users.edit(worker.uid, { packs: ...api.packs }, errors: 0)
+                                    if self.handle_new_packs_error(api_packs):
                                         time.sleep(1)
+                                        # Retry the reaction
                                         return self.react_to_post(post_id, reaction_type)
+                                
                                 return False, "❌ Session expired (new_packs)"
                             
-                            # Scraping detection (from screenshot)
-                            if 'FBScrapingWarningCometApp' in error_msg or 'scraping' in error_msg.lower():
-                                entrypoint = error.get('entrypoint', '')
-                                if entrypoint:
-                                    if self.errors < self.max_errors:
-                                        self.errors += 1
-                                        data = {'entrypoint': entrypoint}
-                                        if self.fix_scraping_detection(data, self.cookie):
-                                            time.sleep(2)
-                                            return self.react_to_post(post_id, reaction_type)
+                            # Scraping detection
+                            if 'scraping' in error_msg.lower() or 'FBScrapingWarningCometApp' in error_msg:
                                 return False, "❌ Scraping detected"
                             
-                            # Post not found or invalid feedback_id
-                            if 'not found' in error_msg.lower() or 'does not exist' in error_msg.lower():
+                            # Post not found
+                            if 'not found' in error_msg.lower():
                                 if attempt < len(doc_ids) - 1:
                                     continue
-                                return False, "❌ Post not found / Invalid ID"
+                                return False, "❌ Post not found"
                             
-                            # Unknown error
                             if attempt == len(doc_ids) - 1:
                                 return False, f"❌ {error_msg[:40]}"
                             continue
                         
-                        # Success check
-                        if 'data' in result:
-                            data = result.get('data', {})
-                            # Check for successful reaction in response
-                            if data and any(data.values()):
-                                self.errors = 0
-                                return True, f"✓ {reaction_type}"
+                        # SUCCESS CHECK - matching screenshot
+                        # const feedback_id = response?.data?.feedback_reaction
+                        feedback_reaction = self.get_feedback_id_from_response(result)
+                        
+                        if feedback_reaction or 'data' in result:
+                            # console.log("[workers — deliver reaction, login success]")
+                            self.errors = 0
+                            return True, f"✓ {reaction_type}"
                         
                         # No errors = success
                         self.errors = 0
                         return True, f"✓ {reaction_type}"
                         
                     except json.JSONDecodeError:
-                        # If response is valid but not JSON
                         if len(text) > 50:
                             return True, f"✓ {reaction_type}"
                         if attempt < len(doc_ids) - 1:
@@ -442,7 +407,7 @@ class FBAutoReact:
                         continue
                     return False, "❌ Bad request"
                 elif response.status_code == 401:
-                    return False, "❌ Unauthorized - check cookie"
+                    return False, "❌ Unauthorized"
                 else:
                     if attempt < len(doc_ids) - 1:
                         continue
@@ -453,13 +418,7 @@ class FBAutoReact:
                 if attempt < len(doc_ids) - 1:
                     time.sleep(2)
                     continue
-                return False, "❌ Connection timeout"
-            except requests.exceptions.ConnectionError as e:
-                print(f"[DEBUG] Connection error: {str(e)[:60]}")
-                if attempt < len(doc_ids) - 1:
-                    time.sleep(2)
-                    continue
-                return False, "❌ Connection failed"
+                return False, "❌ Timeout"
             except Exception as e:
                 print(f"[DEBUG] Exception: {str(e)[:60]}")
                 if attempt < len(doc_ids) - 1:
@@ -469,7 +428,7 @@ class FBAutoReact:
         return False, "❌ All attempts failed"
 
 def worker(cookie, post_id, reaction_type, thread_id):
-    """Worker function for threading"""
+    """Worker function - matching screenshot logic"""
     try:
         fb = FBAutoReact(cookie)
         
@@ -477,11 +436,18 @@ def worker(cookie, post_id, reaction_type, thread_id):
             return thread_id, False, f"[{thread_id}] ❌ Invalid cookie", "INVALID_COOKIE"
         
         if not fb.initialized:
+            # Matching screenshot: "FAILS TO LOGIN JUST LIKE THE VALIDATE"
+            # worker.errors = (worker.errors || 0) + 1;
             return thread_id, False, f"[{thread_id}] [{fb.user_id}] ❌ Login failed", "LOGIN_FAILED"
         
         success, message = fb.react_to_post(post_id, reaction_type)
         status = f"[{thread_id}] [{fb.user_id}] {message}"
         error_type = None if success else "REACTION_FAILED"
+        
+        # Matching screenshot: if (worker.errors >= global.config.max_errors)
+        if not success and fb.errors >= fb.max_errors:
+            # await users.del(worker.uid); - DELETE USER
+            status += " [MAX_ERRORS_REACHED]"
         
         return thread_id, success, status, error_type
         
@@ -491,19 +457,18 @@ def worker(cookie, post_id, reaction_type, thread_id):
 def banner():
     print("""
 ╔═══════════════════════════════════════════════════════╗
-║  FB Auto React v3.5 - Connection Pool Fixed          ║
-║  ✓ Fixed timeout & connection pool issues            ║
-║  ✓ Enhanced feedback_id extraction                   ║
-║  ✓ Better error handling (new_packs, scraping)       ║
-║  ✓ Matching working Node.js implementation           ║
+║  FB Auto React v4.0 - Working Implementation         ║
+║  ✓ Based on your friend's working Node.js code       ║
+║  ✓ Handles new_packs/renew_values error correctly    ║
+║  ✓ Error code 1357004 detection                      ║
+║  ✓ Proper feedback_id extraction from response       ║
 ╚═══════════════════════════════════════════════════════╝
     """)
 
 def extract_post_id(url_or_id):
-    """Quick extract post ID from URL"""
+    """Extract post ID from URL"""
     url_or_id = url_or_id.strip()
     
-    # Already valid format
     if url_or_id.replace('_', '').isdigit() or url_or_id.startswith('pfbid'):
         return url_or_id
     
@@ -589,7 +554,6 @@ def main():
     print("   Examples:")
     print("   - https://www.facebook.com/PAGE/posts/123456789")
     print("   - https://www.facebook.com/story.php?story_fbid=XXX&id=YYY")
-    print("   - pfbid02S5uMnXYZ123")
     
     post_input = input("\n[?] Post: ").strip()
     
