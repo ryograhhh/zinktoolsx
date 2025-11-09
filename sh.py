@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Facebook Auto React Tool v4.1 - With User Info Display
-Shows UID and Name when cookie loads successfully
+Facebook Auto React Tool v4.2 - Fixed Post Not Found Issue
+Enhanced feedback_id extraction with better pfbid handling
 """
 
 import requests
@@ -9,7 +9,7 @@ import json
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 import random
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -83,7 +83,6 @@ class FBAutoReact:
     def extract_user_name(self, html):
         """Extract user name from Facebook page"""
         try:
-            # Multiple patterns to extract name
             patterns = [
                 r'"NAME":"([^"]+)"',
                 r'"name":"([^"]+)"[^}]*"__typename":"User"',
@@ -96,18 +95,15 @@ class FBAutoReact:
                 match = re.search(pattern, html)
                 if match:
                     name = match.group(1)
-                    # Unescape unicode
                     try:
                         name = name.encode().decode('unicode_escape')
                     except:
                         pass
                     return name
             
-            # Try from meta tag
             meta_match = re.search(r'<title>([^<]+)</title>', html)
             if meta_match:
                 title = meta_match.group(1)
-                # Remove " | Facebook" suffix
                 name = title.replace(' | Facebook', '').strip()
                 if name and len(name) < 100:
                     return name
@@ -126,7 +122,6 @@ class FBAutoReact:
         try:
             print(f"[DEBUG] Loading cookie for UID: {self.user_id}...")
             
-            # Get main page
             response = self.session.get(
                 'https://www.facebook.com/',
                 timeout=30,
@@ -139,16 +134,13 @@ class FBAutoReact:
             
             html = response.text
             
-            # Check if logged in
             if 'login' in response.url.lower() or 'checkpoint' in response.url.lower():
                 print(f"[DEBUG] ❌ Cookie expired or checkpoint")
                 return False
             
-            # Extract user name
             self.user_name = self.extract_user_name(html)
             print(f"[DEBUG] ✓ Found user: {self.user_name}")
             
-            # Extract fb_dtsg
             dtsg_patterns = [
                 r'"DTSGInitialData"[^}]*"token":"([^"]+)"',
                 r'"dtsg"\s*:\s*\{\s*"token"\s*:\s*"([^"]+)"',
@@ -166,10 +158,8 @@ class FBAutoReact:
             
             if not self.fb_dtsg:
                 print("[DEBUG] ❌ Failed to extract fb_dtsg")
-                # Try fallback method
                 return self.fallback_token_extraction()
             
-            # Extract LSD
             lsd_patterns = [
                 r'"LSD"[^}]*"token":"([^"]+)"',
                 r'"lsd":"([^"]+)"',
@@ -184,18 +174,15 @@ class FBAutoReact:
                     print(f"[DEBUG] ✓ Got LSD token")
                     break
             
-            # Extract revision
             rev_match = re.search(r'"__rev":(\d+)', html)
             if rev_match:
                 self.revision = rev_match.group(1)
                 print(f"[DEBUG] ✓ Got revision: {self.revision}")
             
-            # Generate jazoest
             if self.user_id:
                 self.jazoest = '2' + str(sum(ord(c) for c in self.user_id))
                 print(f"[DEBUG] ✓ Generated jazoest")
             
-            # Update headers for GraphQL
             self.session.headers.update({
                 'content-type': 'application/x-www-form-urlencoded',
                 'x-fb-friendly-name': 'CometUFIFeedbackReactMutation'
@@ -237,7 +224,6 @@ class FBAutoReact:
                         self.fb_dtsg = data['payload']['token']
                         print(f"[DEBUG] ✓ Got fb_dtsg from fallback: {self.fb_dtsg[:20]}...")
                         
-                        # Generate jazoest
                         if self.user_id:
                             self.jazoest = '2' + str(sum(ord(c) for c in self.user_id))
                         
@@ -270,60 +256,111 @@ class FBAutoReact:
             return False
     
     def get_feedback_id(self, post_url_or_id):
-        """Enhanced feedback ID extraction"""
+        """
+        ENHANCED feedback ID extraction
+        Handles pfbid format properly by using it directly as feedback_id
+        """
         try:
             post_url_or_id = str(post_url_or_id).strip()
             
-            # Already in correct format
-            if '_' in post_url_or_id and post_url_or_id.replace('_', '').isdigit():
-                if len(post_url_or_id) > 15:
-                    return post_url_or_id
+            print(f"[DEBUG] Processing post ID: {post_url_or_id[:50]}...")
             
-            if post_url_or_id.isdigit() and len(post_url_or_id) >= 15:
+            # If it's a pfbid, use it directly!
+            if post_url_or_id.startswith('pfbid'):
+                print(f"[DEBUG] Using pfbid directly as feedback_id: {post_url_or_id}")
                 return post_url_or_id
             
-            # Build full URL
-            if not post_url_or_id.startswith('http'):
-                if 'pfbid' in post_url_or_id:
-                    post_url_or_id = f'https://www.facebook.com/permalink.php?story_fbid={post_url_or_id}'
-                else:
-                    post_url_or_id = f'https://www.facebook.com/{post_url_or_id}'
+            # If numeric with underscore (already proper format)
+            if '_' in post_url_or_id and post_url_or_id.replace('_', '').isdigit():
+                if len(post_url_or_id) > 15:
+                    print(f"[DEBUG] Using numeric feedback_id: {post_url_or_id}")
+                    return post_url_or_id
             
-            # Parse URL parameters
+            # If pure numeric and long enough
+            if post_url_or_id.isdigit() and len(post_url_or_id) >= 15:
+                print(f"[DEBUG] Using numeric ID: {post_url_or_id}")
+                return post_url_or_id
+            
+            # Build full URL if needed
+            if not post_url_or_id.startswith('http'):
+                post_url_or_id = f'https://www.facebook.com/{post_url_or_id}'
+            
+            # Parse URL parameters first (fastest method)
             parsed = urlparse(post_url_or_id)
             params = parse_qs(parsed.query)
             
-            # story_fbid + id format
-            if 'story_fbid' in params and 'id' in params:
-                return f"{params['id'][0]}_{params['story_fbid'][0]}"
+            # Check for story_fbid in URL
+            if 'story_fbid' in params:
+                story_fbid = params['story_fbid'][0]
+                
+                # If story_fbid is pfbid, use it directly
+                if story_fbid.startswith('pfbid'):
+                    print(f"[DEBUG] Extracted pfbid from URL: {story_fbid}")
+                    return story_fbid
+                
+                # If numeric story_fbid with user id
+                if 'id' in params:
+                    feedback_id = f"{params['id'][0]}_{story_fbid}"
+                    print(f"[DEBUG] Constructed feedback_id: {feedback_id}")
+                    return feedback_id
             
-            # Fetch page
+            # Extract pfbid from URL path
+            pfbid_match = re.search(r'pfbid[\w\-]+', post_url_or_id)
+            if pfbid_match:
+                pfbid = pfbid_match.group(0)
+                print(f"[DEBUG] Extracted pfbid from path: {pfbid}")
+                return pfbid
+            
+            # Fetch page to extract feedback_id
+            print(f"[DEBUG] Fetching post page to extract feedback_id...")
             response = self.session.get(post_url_or_id, timeout=30, allow_redirects=True)
             
             if response.status_code != 200:
+                print(f"[DEBUG] Failed to fetch page: HTTP {response.status_code}")
                 return post_url_or_id
             
             html = response.text
             
-            # Enhanced patterns
-            patterns = [
-                r'"feedback_id":"(\d+)"',
-                r'"feedbackID":"(\d+)"',
-                r'"legacy_story_hideable_id":"(\d+)"',
-                r'"post_id":"(\d+)"',
-                r'"top_level_post_id":"(\d+)"',
-                r'story_fbid=(\d+)[^0-9]+id=(\d+)',
-                r'"id":"(\d+)"[^}]{0,200}"__typename":"Post"',
+            # Try to extract pfbid from HTML first
+            pfbid_patterns = [
+                r'"post_id":"(pfbid[\w\-]+)"',
+                r'"feedback_id":"(pfbid[\w\-]+)"',
+                r'"id":"(pfbid[\w\-]+)"[^}]{0,100}"__typename":"Post"',
+                r'story_fbid=(pfbid[\w\-]+)',
             ]
             
-            for pattern in patterns:
+            for pattern in pfbid_patterns:
+                match = re.search(pattern, html)
+                if match:
+                    pfbid = match.group(1)
+                    print(f"[DEBUG] Found pfbid in HTML: {pfbid}")
+                    return pfbid
+            
+            # Fallback to numeric ID extraction
+            numeric_patterns = [
+                r'"feedback_id":"(\d{15,})"',
+                r'"feedbackID":"(\d{15,})"',
+                r'"legacy_story_hideable_id":"(\d{15,})"',
+                r'"post_id":"(\d{15,})"',
+                r'"top_level_post_id":"(\d{15,})"',
+                r'story_fbid=(\d+)[^0-9]+id=(\d+)',
+                r'"id":"(\d{15,})"[^}]{0,200}"__typename":"Post"',
+            ]
+            
+            for pattern in numeric_patterns:
                 matches = re.findall(pattern, html)
                 if matches:
                     if isinstance(matches[0], tuple):
-                        return f"{matches[0][1]}_{matches[0][0]}"
+                        feedback_id = f"{matches[0][1]}_{matches[0][0]}"
+                        print(f"[DEBUG] Constructed from tuple: {feedback_id}")
+                        return feedback_id
+                    
                     longest = max(matches, key=lambda x: len(str(x)))
                     if len(str(longest)) >= 15:
+                        print(f"[DEBUG] Extracted numeric ID: {longest}")
                         return str(longest)
+            
+            print(f"[DEBUG] ⚠️ Could not extract feedback_id, using original")
             
         except Exception as e:
             print(f"[DEBUG] get_feedback_id error: {str(e)}")
@@ -346,15 +383,20 @@ class FBAutoReact:
         reaction_id = reaction_map.get(reaction_type.upper(), reaction_map['LIKE'])
         feedback_id = self.get_feedback_id(post_id)
         
+        print(f"[DEBUG] Using feedback_id: {feedback_id}")
+        
         # Latest working doc_ids
         doc_ids = [
             '8047049165356556',
             '7565960703454863',
             '6360991980619959',
+            '5359434074136134',
         ]
         
         for attempt, doc_id in enumerate(doc_ids):
             try:
+                print(f"[DEBUG] Attempt {attempt + 1}/{len(doc_ids)} with doc_id: {doc_id}")
+                
                 # Build variables
                 variables = {
                     "input": {
@@ -401,6 +443,8 @@ class FBAutoReact:
                     timeout=40
                 )
                 
+                print(f"[DEBUG] Response status: {response.status_code}")
+                
                 if response.status_code == 200:
                     text = response.text
                     text = re.sub(r'^\s*for\s*\(\s*;;\s*\)\s*;?', '', text)
@@ -414,7 +458,11 @@ class FBAutoReact:
                             error_msg = error.get('message', '')
                             error_code = error.get('code', 0)
                             
+                            print(f"[DEBUG] Error: {error_msg} (code: {error_code})")
+                            
                             if error_code == 1357004:
+                                if attempt < len(doc_ids) - 1:
+                                    continue
                                 return False, "❌ Invalid request"
                             
                             # Handle renew_values / new_packs
@@ -432,10 +480,12 @@ class FBAutoReact:
                             if 'scraping' in error_msg.lower():
                                 return False, "❌ Scraping detected"
                             
-                            if 'not found' in error_msg.lower():
+                            # Post not found - try next doc_id
+                            if 'not found' in error_msg.lower() or 'does not exist' in error_msg.lower():
                                 if attempt < len(doc_ids) - 1:
+                                    print(f"[DEBUG] Post not found with this doc_id, trying next...")
                                     continue
-                                return False, "❌ Post not found"
+                                return False, "❌ Post not found / Invalid feedback_id"
                             
                             if attempt == len(doc_ids) - 1:
                                 return False, f"❌ {error_msg[:40]}"
@@ -443,6 +493,7 @@ class FBAutoReact:
                         
                         # Success
                         if 'data' in result:
+                            print(f"[DEBUG] ✓ Reaction successful!")
                             self.errors = 0
                             return True, f"✓ {reaction_type}"
                         
@@ -464,11 +515,13 @@ class FBAutoReact:
                     return False, f"❌ HTTP {response.status_code}"
                     
             except requests.exceptions.Timeout:
+                print(f"[DEBUG] Timeout on attempt {attempt + 1}")
                 if attempt < len(doc_ids) - 1:
                     time.sleep(2)
                     continue
                 return False, "❌ Timeout"
             except Exception as e:
+                print(f"[DEBUG] Exception: {str(e)}")
                 if attempt < len(doc_ids) - 1:
                     continue
                 return False, f"❌ {str(e)[:30]}"
@@ -498,37 +551,48 @@ def worker(cookie, post_id, reaction_type, thread_id):
 def banner():
     print("""
 ╔═══════════════════════════════════════════════════════╗
-║  FB Auto React v4.1 - With User Info Display         ║
-║  ✓ Shows UID and Name when cookie loads              ║
-║  ✓ Better login verification                         ║
-║  ✓ Enhanced error messages                           ║
+║  FB Auto React v4.2 - Fixed Post Not Found Issue     ║
+║  ✓ Enhanced pfbid support                            ║
+║  ✓ Multiple doc_id fallback attempts                 ║
+║  ✓ Better feedback_id extraction                     ║
 ╚═══════════════════════════════════════════════════════╝
     """)
 
 def extract_post_id(url_or_id):
-    """Extract post ID from URL"""
+    """Extract post ID from URL - preserving pfbid format"""
     url_or_id = url_or_id.strip()
     
-    if url_or_id.replace('_', '').isdigit() or url_or_id.startswith('pfbid'):
+    # If already pfbid or numeric, return as-is
+    if url_or_id.startswith('pfbid') or (url_or_id.replace('_', '').isdigit() and len(url_or_id) > 10):
         return url_or_id
     
     try:
         parsed = urlparse(url_or_id)
         params = parse_qs(parsed.query)
         
-        if 'story_fbid' in params and 'id' in params:
-            return f"{params['id'][0]}_{params['story_fbid'][0]}"
+        # Extract story_fbid (could be pfbid)
+        if 'story_fbid' in params:
+            story_fbid = params['story_fbid'][0]
+            # If pfbid, return directly
+            if story_fbid.startswith('pfbid'):
+                return story_fbid
+            # If numeric with id param
+            if 'id' in params:
+                return f"{params['id'][0]}_{story_fbid}"
+            return story_fbid
         
+        # Extract from path
         if '/posts/' in url_or_id:
             match = re.search(r'/posts/([^/?&]+)', url_or_id)
             if match:
                 return match.group(1)
         
-        if 'pfbid' in url_or_id:
-            match = re.search(r'pfbid[\w]+', url_or_id)
-            if match:
-                return match.group(0)
+        # Extract pfbid from anywhere in URL
+        pfbid_match = re.search(r'pfbid[\w\-]+', url_or_id)
+        if pfbid_match:
+            return pfbid_match.group(0)
         
+        # Extract numeric ID
         match = re.search(r'(\d{15,})', url_or_id)
         if match:
             return match.group(1)
@@ -590,7 +654,7 @@ def main():
     
     print(f"\n✓ Total: {len(cookies)} cookie(s)")
     
-    # Test first cookie to show it's working
+    # Test first cookie
     print("\n[*] Testing first cookie...")
     print("="*70)
     test_fb = FBAutoReact(cookies[0])
@@ -605,7 +669,8 @@ def main():
     
     print("\n[*] Enter post URL or ID:")
     print("   Examples:")
-    print("   - https://www.facebook.com/PAGE/posts/123456789")
+    print("   - https://www.facebook.com/PAGE/posts/pfbid0XYZ...")
+    print("   - pfbid0SwNibUBSrr2L5t4qgQCZka9iJQFxRe8k1GwSiYAjnAmK...")
     print("   - https://www.facebook.com/story.php?story_fbid=XXX&id=YYY")
     
     post_input = input("\n[?] Post: ").strip()
@@ -615,7 +680,7 @@ def main():
         return
     
     post_id = extract_post_id(post_input)
-    print(f"✓ Using: {post_id}")
+    print(f"✓ Extracted Post ID: {post_id[:60]}...")
     
     print("\n[*] Select Reaction:")
     print("1.👍 LIKE    2.❤️ LOVE    3.🤗 CARE    4.😂 HAHA")
@@ -636,7 +701,7 @@ def main():
     
     print("\n" + "="*70)
     print("Starting Auto React...")
-    print(f"Post: {post_id}")
+    print(f"Post: {post_id[:60]}...")
     print(f"Reaction: {reaction}")
     print(f"Accounts: {len(cookies)}")
     print(f"Threads: {threads}")
@@ -684,7 +749,7 @@ def main():
     
     if loaded_users:
         print(f"\n[Loaded Users: {len(loaded_users)}]")
-        for uid, name in loaded_users[:5]:  # Show first 5
+        for uid, name in loaded_users[:5]:
             print(f"  • {uid} - {name}")
         if len(loaded_users) > 5:
             print(f"  ... and {len(loaded_users) - 5} more")
