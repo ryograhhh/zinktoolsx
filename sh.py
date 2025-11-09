@@ -115,37 +115,55 @@ class FBAutoReact:
             return False
     
     def get_feedback_id(self, post_url_or_id):
-        """Convert post URL/ID to proper feedback_id format"""
+        """Convert post URL/ID to proper feedback_id format - Enhanced for pfbid"""
         try:
             post_url_or_id = str(post_url_or_id).strip()
             
-            # If already valid format
+            # If already valid numeric format
             if post_url_or_id.replace('_', '').isdigit() and len(post_url_or_id) > 10:
                 return post_url_or_id
             
-            # Handle pfbid format - need to resolve it
-            if 'pfbid' in post_url_or_id:
+            # Handle pfbid format - need to resolve it to numeric ID
+            if 'pfbid' in post_url_or_id or 'facebook.com' in post_url_or_id:
+                # Build full URL
                 if not post_url_or_id.startswith('http'):
                     post_url_or_id = f'https://www.facebook.com/{post_url_or_id}'
                 
-                response = self.session.get(post_url_or_id, timeout=10)
+                # Remove app=fbl parameter if present
+                post_url_or_id = re.sub(r'[?&]app=fbl', '', post_url_or_id)
+                
+                print(f"[DEBUG] Fetching post: {post_url_or_id}")
+                
+                response = self.session.get(post_url_or_id, timeout=15, allow_redirects=True)
                 html = response.text
                 
-                # Extract feedback_id from page
+                # Multiple patterns to extract feedback_id
                 patterns = [
                     r'"feedback_id":"(\d+)"',
                     r'"feedbackID":"(\d+)"',
-                    r'story_fbid=(\d+)&(?:amp;)?id=(\d+)',
+                    r'"post_id":"(\d+)"',
+                    r'"id":"(\d+)"[^}]*"__typename":"Post"',
+                    r'feedback_id=(\d+)',
+                    r'story_fbid=(\d+).*?id=(\d+)',
+                    r'"target_id":(\d+)',
+                    r'top_level_post_id.*?(\d{15,})',
                 ]
                 
                 for pattern in patterns:
-                    match = re.search(pattern, html)
-                    if match:
-                        if match.lastindex == 2:
-                            return f"{match.group(2)}_{match.group(1)}"
-                        return match.group(1)
+                    matches = re.findall(pattern, html)
+                    if matches:
+                        # If tuple (story_fbid, id pattern)
+                        if isinstance(matches[0], tuple):
+                            return f"{matches[0][1]}_{matches[0][0]}"
+                        # Find longest match (most likely correct)
+                        longest = max(matches, key=len)
+                        if len(str(longest)) >= 15:  # Valid FB post ID length
+                            print(f"[DEBUG] Extracted feedback_id: {longest}")
+                            return str(longest)
+                
+                print(f"[DEBUG] Could not extract numeric ID from HTML, using pfbid directly")
             
-            # Parse URL
+            # Parse URL parameters
             if 'facebook.com' in post_url_or_id:
                 parsed = urlparse(post_url_or_id)
                 params = parse_qs(parsed.query)
