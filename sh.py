@@ -1,363 +1,244 @@
 #!/usr/bin/env python3
 """
-Advanced API Endpoint Tester with aiohttp
-Compatible with Termux
-
-Install requirements:
-    pkg install python
-    pip install aiohttp
+Facebook Auto React Tool for Termux
+Supports multiple accounts with threading and GraphQL API
 """
 
-import aiohttp
-import asyncio
+import requests
 import json
-import sys
-from typing import Dict, Any, List
+import threading
+import time
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-class APITester:
-    def __init__(self, base_url: str):
-        self.base_url = base_url.rstrip('/')
-        self.results = []
+class FBAutoReact:
+    def __init__(self, cookie):
+        self.cookie = cookie
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 11; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.104 Mobile Safari/537.36',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Cookie': cookie,
+            'x-fb-friendly-name': 'FeedbackReactMutation',
+            'x-fb-lsd': self.extract_token('LSD'),
+        })
+        self.user_id = self.extract_user_id()
+        self.fb_dtsg = self.get_fb_dtsg()
+        self.jazoest = self.extract_token('jazoest')
         
-    async def test_endpoint(self, session: aiohttp.ClientSession, path: str, method: str = 'GET') -> Dict[str, Any]:
-        """Test a single API endpoint"""
-        url = f"{self.base_url}{path}"
-        
+    def extract_user_id(self):
+        """Extract user ID from cookie"""
         try:
-            async with session.request(method, url, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                content_type = response.headers.get('Content-Type', '')
-                
-                # Try to get response body
-                try:
-                    if 'application/json' in content_type:
-                        data = await response.json()
-                        data_type = 'json'
-                    else:
-                        text = await response.text()
-                        data = text[:1000]  # First 1000 chars
-                        data_type = 'text'
-                except:
-                    data = None
-                    data_type = 'error'
-                
-                result = {
-                    'method': method,
-                    'path': path,
-                    'url': url,
-                    'status': response.status,
-                    'status_text': response.reason,
-                    'success': response.ok,
-                    'content_type': content_type,
-                    'headers': dict(response.headers),
-                    'data_type': data_type,
-                    'data': data,
-                    'timestamp': datetime.now().isoformat()
+            if 'c_user=' in self.cookie:
+                return self.cookie.split('c_user=')[1].split(';')[0]
+        except:
+            pass
+        return None
+    
+    def extract_token(self, token_name):
+        """Extract tokens from Facebook"""
+        try:
+            if token_name == 'LSD':
+                r = self.session.get('https://m.facebook.com/')
+                if 'LSD' in r.text:
+                    return r.text.split('LSD",[],{"token":"')[1].split('"')[0]
+            elif token_name == 'jazoest':
+                # Generate jazoest from user_id
+                return '2' + str(sum(ord(c) for c in self.user_id))
+        except:
+            pass
+        return None
+    
+    def get_fb_dtsg(self):
+        """Get fb_dtsg token"""
+        try:
+            r = self.session.get('https://m.facebook.com/')
+            if 'DTSGInitialData' in r.text:
+                dtsg = r.text.split('DTSGInitialData",[],{"token":"')[1].split('"')[0]
+                return dtsg
+        except:
+            pass
+        return None
+    
+    def react_to_post(self, post_id, reaction_type='LIKE'):
+        """
+        React to a Facebook post using GraphQL API
+        reaction_type: LIKE, LOVE, HAHA, WOW, SAD, ANGRY, CARE
+        """
+        reaction_map = {
+            'LIKE': '1635855486666999',
+            'LOVE': '1678524932434102', 
+            'CARE': '613557422527858',
+            'HAHA': '115940658764963',
+            'WOW': '478547315650144',
+            'SAD': '908563459236466',
+            'ANGRY': '444813342392137'
+        }
+        
+        reaction_id = reaction_map.get(reaction_type.upper(), reaction_map['LIKE'])
+        
+        # GraphQL mutation payload
+        data = {
+            'fb_dtsg': self.fb_dtsg,
+            'jazoest': self.jazoest,
+            'fb_api_req_friendly_name': 'FeedbackReactMutation',
+            'variables': json.dumps({
+                'input': {
+                    'attribution_id_v2': f'FeedbackReactMutation,{post_id}',
+                    'feedback_id': post_id,
+                    'feedback_reaction_id': reaction_id,
+                    'feedback_source': 'OBJECT',
+                    'is_tracking_encrypted': False,
+                    'tracking': [],
+                    'session_id': str(int(time.time())),
+                    'actor_id': self.user_id,
+                    'client_mutation_id': str(int(time.time() * 1000))
                 }
-                
-                return result
-                
-        except asyncio.TimeoutError:
-            return {
-                'method': method,
-                'path': path,
-                'url': url,
-                'status': 0,
-                'success': False,
-                'error': 'Timeout',
-                'timestamp': datetime.now().isoformat()
-            }
-        except Exception as e:
-            return {
-                'method': method,
-                'path': path,
-                'url': url,
-                'status': 0,
-                'success': False,
-                'error': str(e),
-                'timestamp': datetime.now().isoformat()
-            }
-    
-    async def test_all_endpoints(self, paths: List[str]):
-        """Test all endpoints concurrently"""
-        async with aiohttp.ClientSession() as session:
-            tasks = [self.test_endpoint(session, path) for path in paths]
-            self.results = await asyncio.gather(*tasks)
-        return self.results
-    
-    async def custom_request(self, path: str, method: str = 'GET', headers: Dict = None, data: Any = None):
-        """Make a custom request to the API"""
-        url = f"{self.base_url}{path}"
+            }),
+            'doc_id': '5359434074136134'
+        }
         
-        async with aiohttp.ClientSession() as session:
-            try:
-                kwargs = {'timeout': aiohttp.ClientTimeout(total=10)}
-                if headers:
-                    kwargs['headers'] = headers
-                if data:
-                    if isinstance(data, dict):
-                        kwargs['json'] = data
-                    else:
-                        kwargs['data'] = data
-                
-                async with session.request(method, url, **kwargs) as response:
-                    content_type = response.headers.get('Content-Type', '')
-                    
-                    if 'application/json' in content_type:
-                        response_data = await response.json()
-                    else:
-                        response_data = await response.text()
-                    
-                    return {
-                        'url': url,
-                        'method': method,
-                        'status': response.status,
-                        'headers': dict(response.headers),
-                        'data': response_data
-                    }
-            except Exception as e:
-                return {'error': str(e), 'url': url}
-    
-    def print_result(self, result: Dict[str, Any]):
-        """Pretty print a single result"""
-        print(f"\n{'='*70}")
-        print(f"🔗 {result['method']} {result['url']}")
-        print(f"{'='*70}")
-        
-        if result.get('error'):
-            print(f"❌ Error: {result['error']}")
-        else:
-            status_symbol = "✅" if result['success'] else "❌"
-            print(f"{status_symbol} Status: {result['status']} {result.get('status_text', '')}")
-            print(f"📦 Content-Type: {result.get('content_type', 'N/A')}")
-            
-            if result.get('data_type') == 'json' and result.get('data'):
-                print(f"\n📄 JSON Response:")
-                print(json.dumps(result['data'], indent=2, ensure_ascii=False))
-            elif result.get('data_type') == 'text' and result.get('data'):
-                print(f"\n📝 Text Response (first 1000 chars):")
-                print(result['data'])
-    
-    def print_summary(self):
-        """Print summary of all tests"""
-        print(f"\n{'='*70}")
-        print("📊 SUMMARY")
-        print(f"{'='*70}")
-        
-        total = len(self.results)
-        successful = sum(1 for r in self.results if r.get('success'))
-        
-        print(f"Total endpoints tested: {total}")
-        print(f"Successful (2xx): {successful}")
-        print(f"Failed: {total - successful}")
-        
-        # Group by status code
-        status_codes = {}
-        for r in self.results:
-            status = r.get('status', 0)
-            status_codes[status] = status_codes.get(status, 0) + 1
-        
-        print(f"\n📈 Status Code Distribution:")
-        for status, count in sorted(status_codes.items()):
-            print(f"  {status}: {count}")
-        
-        # Show successful endpoints
-        successful_endpoints = [r for r in self.results if r.get('success')]
-        if successful_endpoints:
-            print(f"\n✅ Working Endpoints ({len(successful_endpoints)}):")
-            for r in successful_endpoints:
-                print(f"  [{r['status']}] {r['method']} {r['path']}")
-    
-    def save_results(self, filename: str = 'api_test_results.json'):
-        """Save results to JSON file"""
-        with open(filename, 'w') as f:
-            json.dump(self.results, f, indent=2, ensure_ascii=False)
-        print(f"\n💾 Results saved to: {filename}")
-
-async def main():
-    """Main function"""
-    print("="*70)
-    print("🚀 ADVANCED API ENDPOINT TESTER (aiohttp)")
-    print("="*70)
-    
-    base_url = "https://pyprivate.pshteam.dev"
-    print(f"Base URL: {base_url}\n")
-    
-    # Extensive list of common API paths
-    paths = [
-        # Root and common paths
-        '/',
-        '/api',
-        '/api/v1',
-        '/api/v2',
-        '/v1',
-        '/v2',
-        
-        # Documentation
-        '/docs',
-        '/documentation',
-        '/swagger',
-        '/swagger.json',
-        '/openapi.json',
-        '/redoc',
-        '/api-docs',
-        
-        # Health and status
-        '/health',
-        '/healthz',
-        '/status',
-        '/ping',
-        '/alive',
-        '/ready',
-        
-        # PyPI related (since it's pyprivate)
-        '/simple',
-        '/simple/',
-        '/packages',
-        '/packages/',
-        '/pypi',
-        '/pypi/',
-        '/package',
-        '/package/',
-        
-        # Authentication
-        '/auth',
-        '/login',
-        '/token',
-        '/api/token',
-        
-        # User/Admin
-        '/user',
-        '/users',
-        '/admin',
-        '/api/users',
-        
-        # Info/Meta
-        '/info',
-        '/meta',
-        '/version',
-        '/api/info',
-        
-        # Search
-        '/search',
-        '/api/search',
-        
-        # Upload
-        '/upload',
-        '/api/upload',
-        
-        # Common endpoints
-        '/index',
-        '/home',
-        '/stats',
-        '/metrics',
-    ]
-    
-    tester = APITester(base_url)
-    
-    print(f"Testing {len(paths)} endpoints concurrently...\n")
-    print("⏳ Please wait...\n")
-    
-    # Test all endpoints
-    await tester.test_all_endpoints(paths)
-    
-    # Print results
-    for result in tester.results:
-        tester.print_result(result)
-    
-    # Print summary
-    tester.print_summary()
-    
-    # Save results
-    tester.save_results()
-    
-    # Interactive mode
-    print(f"\n{'='*70}")
-    print("🔧 CUSTOM REQUEST MODE")
-    print(f"{'='*70}")
-    print("You can now make custom requests to the API")
-    print("Commands:")
-    print("  - Enter path (e.g., /api/v1/packages)")
-    print("  - 'quit' or 'exit' to exit")
-    print("  - 'list' to see successful endpoints")
-    print()
-    
-    while True:
         try:
-            user_input = input("Enter path or command: ").strip()
+            response = self.session.post(
+                'https://www.facebook.com/api/graphql/',
+                data=data,
+                timeout=30
+            )
             
-            if user_input.lower() in ['quit', 'exit', 'q']:
-                break
-            elif user_input.lower() == 'list':
-                successful = [r for r in tester.results if r.get('success')]
-                if successful:
-                    print("\n✅ Successful endpoints:")
-                    for r in successful:
-                        print(f"  [{r['status']}] {r['path']}")
+            if response.status_code == 200:
+                result = response.json()
+                if 'errors' not in result:
+                    return True, f"✓ Reacted with {reaction_type}"
                 else:
-                    print("\n❌ No successful endpoints found")
-                print()
-                continue
-            elif not user_input:
-                continue
-            
-            # Ensure path starts with /
-            if not user_input.startswith('/'):
-                user_input = '/' + user_input
-            
-            # Ask for method
-            method = input("HTTP Method (GET/POST/PUT/DELETE) [GET]: ").strip().upper() or 'GET'
-            
-            # Ask for headers
-            print("Headers (JSON format, or press Enter to skip):")
-            headers_input = input().strip()
-            headers = None
-            if headers_input:
-                try:
-                    headers = json.loads(headers_input)
-                except:
-                    print("⚠️  Invalid JSON, using no headers")
-            
-            # Ask for data
-            data = None
-            if method in ['POST', 'PUT', 'PATCH']:
-                print("Request body (JSON format, or press Enter to skip):")
-                data_input = input().strip()
-                if data_input:
-                    try:
-                        data = json.loads(data_input)
-                    except:
-                        print("⚠️  Invalid JSON, sending as text")
-                        data = data_input
-            
-            print("\n⏳ Sending request...")
-            result = await tester.custom_request(user_input, method, headers, data)
-            
-            print(f"\n{'='*70}")
-            print(f"📬 Response from {method} {user_input}")
-            print(f"{'='*70}")
-            if result.get('error'):
-                print(f"❌ Error: {result['error']}")
+                    return False, f"✗ Error: {result.get('errors', 'Unknown error')}"
             else:
-                print(f"✅ Status: {result['status']}")
-                print(f"\n📄 Response:")
-                if isinstance(result['data'], dict) or isinstance(result['data'], list):
-                    print(json.dumps(result['data'], indent=2, ensure_ascii=False))
-                else:
-                    print(result['data'])
-            print()
-            
-        except (KeyboardInterrupt, EOFError):
-            print("\n\nExiting...")
-            break
+                return False, f"✗ HTTP {response.status_code}"
+                
         except Exception as e:
-            print(f"❌ Error: {e}\n")
+            return False, f"✗ Exception: {str(e)}"
+
+def load_cookies(cookie_file='cookies.txt'):
+    """Load cookies from file"""
+    cookies = []
+    try:
+        with open(cookie_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    cookies.append(line)
+    except FileNotFoundError:
+        print(f"[!] Cookie file '{cookie_file}' not found!")
+        return []
+    return cookies
+
+def worker(cookie, post_id, reaction_type, thread_id):
+    """Worker function for threading"""
+    try:
+        fb = FBAutoReact(cookie)
+        if not fb.user_id:
+            return thread_id, False, "Invalid cookie"
+        
+        success, message = fb.react_to_post(post_id, reaction_type)
+        status = f"[Thread-{thread_id}] [{fb.user_id}] {message}"
+        return thread_id, success, status
+    except Exception as e:
+        return thread_id, False, f"[Thread-{thread_id}] Error: {str(e)}"
+
+def banner():
+    """Display banner"""
+    print("""
+╔═══════════════════════════════════════╗
+║   FB Auto React Tool - Termux        ║
+║   Multi-Account with Threading       ║
+║   GraphQL API Support                ║
+╚═══════════════════════════════════════╝
+""")
+
+def main():
+    banner()
     
-    print("\n✅ Done!")
+    # Input
+    cookie_file = input("[?] Cookie file path (default: cookies.txt): ").strip() or 'cookies.txt'
+    cookies = load_cookies(cookie_file)
+    
+    if not cookies:
+        print("[!] No cookies loaded. Exiting...")
+        return
+    
+    print(f"[+] Loaded {len(cookies)} cookie(s)")
+    
+    post_id = input("[?] Enter Post ID or Post URL: ").strip()
+    
+    # Extract post ID from URL if needed
+    if 'facebook.com' in post_id:
+        try:
+            if '/posts/' in post_id:
+                post_id = post_id.split('/posts/')[1].split('/')[0].split('?')[0]
+            elif 'story_fbid=' in post_id:
+                post_id = post_id.split('story_fbid=')[1].split('&')[0]
+        except:
+            print("[!] Could not extract post ID from URL")
+            return
+    
+    print(f"[+] Target Post ID: {post_id}")
+    
+    # Reaction type selection
+    print("\n[*] Reaction Types:")
+    print("1. LIKE ❤️")
+    print("2. LOVE 😍")
+    print("3. CARE 🤗")
+    print("4. HAHA 😂")
+    print("5. WOW 😮")
+    print("6. SAD 😢")
+    print("7. ANGRY 😡")
+    
+    choice = input("\n[?] Select reaction (1-7, default: 1): ").strip() or '1'
+    reactions = {
+        '1': 'LIKE', '2': 'LOVE', '3': 'CARE', 
+        '4': 'HAHA', '5': 'WOW', '6': 'SAD', '7': 'ANGRY'
+    }
+    reaction_type = reactions.get(choice, 'LIKE')
+    
+    max_threads = input("[?] Max threads (default: 5): ").strip() or '5'
+    max_threads = int(max_threads)
+    
+    print(f"\n[+] Starting auto-react with {max_threads} threads...")
+    print(f"[+] Reaction Type: {reaction_type}")
+    print(f"[+] Target: {post_id}")
+    print("-" * 50)
+    
+    # Threading execution
+    success_count = 0
+    failed_count = 0
+    
+    with ThreadPoolExecutor(max_workers=max_threads) as executor:
+        futures = {
+            executor.submit(worker, cookie, post_id, reaction_type, i): i 
+            for i, cookie in enumerate(cookies, 1)
+        }
+        
+        for future in as_completed(futures):
+            thread_id, success, status = future.result()
+            print(status)
+            
+            if success:
+                success_count += 1
+            else:
+                failed_count += 1
+            
+            time.sleep(0.5)  # Rate limiting
+    
+    print("-" * 50)
+    print(f"\n[+] Completed!")
+    print(f"[+] Success: {success_count}")
+    print(f"[+] Failed: {failed_count}")
+    print(f"[+] Total: {len(cookies)}")
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        main()
     except KeyboardInterrupt:
-        print("\n\n⚠️  Interrupted by user")
-        sys.exit(0)
+        print("\n[!] Interrupted by user")
+    except Exception as e:
+        print(f"[!] Error: {str(e)}")
