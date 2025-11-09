@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Facebook Auto React Tool - Fixed Version
-Working with latest FB API and supports all post formats
+Facebook Auto React Tool - Fixed GraphQL & Better Error Handling
+With scraping detection fix and error tracking
 """
 
 import requests
@@ -9,7 +9,6 @@ import json
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 
 class FBAutoReact:
@@ -21,6 +20,8 @@ class FBAutoReact:
         self.jazoest = None
         self.lsd = None
         self.revision = None
+        self.errors = 0
+        self.max_errors = 3
         
         self.session.headers.update({
             'authority': 'www.facebook.com',
@@ -30,19 +31,17 @@ class FBAutoReact:
             'content-type': 'application/x-www-form-urlencoded',
             'origin': 'https://www.facebook.com',
             'referer': 'https://www.facebook.com/',
-            'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120"',
             'sec-ch-ua-mobile': '?0',
             'sec-ch-ua-platform': '"Linux"',
             'sec-fetch-dest': 'empty',
             'sec-fetch-mode': 'cors',
             'sec-fetch-site': 'same-origin',
             'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'cookie': self.cookie,
-            'x-fb-friendly-name': 'CometUFIFeedbackReactMutation',
-            'x-fb-lsd': ''
+            'cookie': self.cookie
         })
         
-        self.initialized = self.get_payload()
+        self.initialized = self.login()
     
     def extract_user_id(self):
         """Extract user ID from cookie"""
@@ -53,13 +52,13 @@ class FBAutoReact:
             pass
         return None
     
-    def get_payload(self):
-        """Get payload data (fb_dtsg, jazoest, revision)"""
+    def login(self):
+        """Login and get all required tokens"""
         if not self.user_id:
             return False
         
         try:
-            # Method 1: Get from ajax/dtsg endpoint
+            # Get tokens from ajax/dtsg endpoint
             response = self.session.get(
                 'https://www.facebook.com/ajax/dtsg/?__a=1',
                 timeout=15
@@ -75,32 +74,21 @@ class FBAutoReact:
                 try:
                     data = json.loads(text)
                     
-                    # Extract token from payload
+                    # Extract fb_dtsg token
                     if 'payload' in data and 'token' in data['payload']:
                         self.fb_dtsg = data['payload']['token']
                     
-                    # Try alternative paths
-                    if not self.fb_dtsg and 'require' in data:
-                        for item in data.get('require', []):
-                            if isinstance(item, list):
-                                for subitem in item:
-                                    if isinstance(subitem, dict) and 'token' in subitem:
-                                        self.fb_dtsg = subitem['token']
-                                        break
-                
                 except json.JSONDecodeError:
                     pass
             
-            # Method 2: Get from main page if Method 1 fails
+            # Fallback: Get from main page
             if not self.fb_dtsg:
                 response = self.session.get('https://www.facebook.com/', timeout=15)
                 html = response.text
                 
-                # Multiple patterns to find fb_dtsg
                 patterns = [
                     r'"DTSGInitialData",\[\],{"token":"([^"]+)"',
                     r'"token":"([^"]+)","async_get_token"',
-                    r'\["DTSGInitData",\[\],{"token":"([^"]+)"',
                     r'{"name":"fb_dtsg","value":"([^"]+)"'
                 ]
                 
@@ -120,55 +108,29 @@ class FBAutoReact:
                 if rev_match:
                     self.revision = rev_match.group(1)
             
-            # Generate jazoest from user_id
+            # Generate jazoest
             if self.user_id:
                 self.jazoest = '2' + str(sum(ord(c) for c in self.user_id))
-            
-            # Update LSD header
-            if self.lsd:
-                self.session.headers['x-fb-lsd'] = self.lsd
             
             return bool(self.fb_dtsg and self.user_id)
             
         except Exception as e:
-            print(f"[!] Payload error: {str(e)}")
             return False
     
-    def extract_post_id_from_url(self, url):
-        """Extract story_fbid and id from Facebook URL"""
+    def fix_scraping_detection(self):
+        """Fix scraping detection by refreshing session"""
         try:
-            parsed = urlparse(url)
-            params = parse_qs(parsed.query)
+            # Visit main page to reset detection
+            self.session.get('https://www.facebook.com/', timeout=10)
+            time.sleep(1)
             
-            # Handle different URL formats
-            if 'story_fbid' in params and 'id' in params:
-                story_fbid = params['story_fbid'][0]
-                page_id = params['id'][0]
-                return f"{page_id}_{story_fbid}"
-            
-            # Handle /posts/ format
-            if '/posts/' in url:
-                post_id = url.split('/posts/')[1].split('/')[0].split('?')[0]
-                return post_id
-            
-            # Handle pfbid format
-            if 'pfbid' in url:
-                match = re.search(r'pfbid\w+', url)
-                if match:
-                    return match.group(0)
-            
-            # Handle direct ID format
-            match = re.search(r'(\d{15,})', url)
-            if match:
-                return match.group(1)
-            
+            # Re-login to get new tokens
+            return self.login()
         except:
-            pass
-        
-        return url
+            return False
     
     def react_to_post(self, post_id, reaction_type='LIKE'):
-        """React to Facebook post"""
+        """React to Facebook post with error handling"""
         
         reaction_map = {
             'LIKE': '1635855486666999',
@@ -182,117 +144,143 @@ class FBAutoReact:
         
         reaction_id = reaction_map.get(reaction_type.upper(), reaction_map['LIKE'])
         
-        # Build variables for GraphQL
-        variables = {
-            "input": {
-                "attribution_id_v2": f"CometSinglePostRoot.react_relay,comet.single_post.generic,via_cold_start,{int(time.time())},100000,190055527696468,,",
-                "feedback_id": post_id,
-                "feedback_reaction_id": reaction_id,
-                "feedback_source": "OBJECT",
-                "is_tracking_encrypted": False,
-                "tracking": [],
-                "session_id": str(int(time.time() * 1000)),
-                "actor_id": self.user_id,
-                "client_mutation_id": str(int(time.time() * 1000))
+        # Try multiple doc_ids (Facebook updates these frequently)
+        doc_ids = [
+            '6360991980619959',  # Latest
+            '5359434074136134',  # Backup 1
+            '4769042373179384',  # Backup 2
+            '3649573195102428',  # Backup 3
+        ]
+        
+        for doc_id in doc_ids:
+            variables = {
+                "input": {
+                    "attribution_id_v2": f"CometSinglePostRoot.react_relay,comet.single_post,via_cold_start,{int(time.time())},100000,190055527696468,,",
+                    "feedback_id": post_id,
+                    "feedback_reaction_id": reaction_id,
+                    "feedback_source": "OBJECT",
+                    "is_tracking_encrypted": False,
+                    "tracking": [],
+                    "session_id": str(int(time.time() * 1000)),
+                    "actor_id": self.user_id,
+                    "client_mutation_id": str(int(time.time() * 1000))
+                }
             }
-        }
-        
-        payload = {
-            'av': self.user_id,
-            '__user': self.user_id,
-            '__a': '1',
-            '__req': 'h',
-            '__hs': str(int(time.time())),
-            'dpr': '1',
-            '__ccg': 'EXCELLENT',
-            '__rev': self.revision or '1007797763',
-            '__s': '',
-            '__hsi': '',
-            '__dyn': '',
-            '__csr': '',
-            'fb_dtsg': self.fb_dtsg,
-            'jazoest': self.jazoest,
-            'fb_api_caller_class': 'RelayModern',
-            'fb_api_req_friendly_name': 'CometUFIFeedbackReactMutation',
-            'variables': json.dumps(variables),
-            'server_timestamps': 'true',
-            'doc_id': '6360991980619959'
-        }
-        
-        if self.lsd:
-            payload['lsd'] = self.lsd
-        
-        try:
-            response = self.session.post(
-                'https://www.facebook.com/api/graphql/',
-                data=payload,
-                timeout=20
-            )
             
-            if response.status_code == 200:
-                text = response.text
+            payload = {
+                'av': self.user_id,
+                '__user': self.user_id,
+                '__a': '1',
+                '__req': 'h',
+                '__hs': str(int(time.time())),
+                '__ccg': 'EXCELLENT',
+                '__rev': self.revision or '1007797763',
+                'fb_dtsg': self.fb_dtsg,
+                'jazoest': self.jazoest,
+                'fb_api_caller_class': 'RelayModern',
+                'fb_api_req_friendly_name': 'CometUFIFeedbackReactMutation',
+                'variables': json.dumps(variables),
+                'server_timestamps': 'true',
+                'doc_id': doc_id
+            }
+            
+            if self.lsd:
+                payload['lsd'] = self.lsd
+            
+            try:
+                response = self.session.post(
+                    'https://www.facebook.com/api/graphql/',
+                    data=payload,
+                    timeout=20
+                )
                 
-                # Remove for(;;); if present
-                if 'for (;;);' in text:
-                    text = text.replace('for (;;);', '')
-                
-                try:
-                    result = json.loads(text)
+                if response.status_code == 200:
+                    text = response.text
                     
-                    # Check for errors
-                    if 'errors' in result:
-                        error_msg = result['errors'][0].get('message', 'Unknown error')
+                    # Remove for(;;); if present
+                    if 'for (;;);' in text:
+                        text = text.replace('for (;;);', '')
+                    
+                    try:
+                        result = json.loads(text)
                         
-                        # Check for scraping detection
-                        if 'scraping' in error_msg.lower():
-                            return False, "Scraping detected - Try again later"
+                        # Check for errors
+                        if 'errors' in result:
+                            error = result['errors'][0]
+                            error_msg = error.get('message', 'Unknown error')
+                            error_code = error.get('code', 0)
+                            
+                            # Handle specific errors
+                            if 'was not found' in error_msg or 'doc_id' in error_msg.lower():
+                                # Try next doc_id
+                                continue
+                            
+                            # Scraping detection
+                            if 'scraping' in error_msg.lower() or 'FBScrapingWarningCometApp' in error_msg:
+                                if self.fix_scraping_detection():
+                                    return self.react_to_post(post_id, reaction_type)
+                                return False, "❌ Scraping detected - Account flagged"
+                            
+                            # New packs error (needs login refresh)
+                            if 'new_packs' in error_msg.lower() or 'renew_values' in error_msg.lower():
+                                if self.errors < self.max_errors:
+                                    self.errors += 1
+                                    if self.login():
+                                        return self.react_to_post(post_id, reaction_type)
+                                return False, f"❌ Login failed: {error_msg}"
+                            
+                            return False, f"❌ FB Error: {error_msg}"
                         
-                        return False, f"Error: {error_msg}"
+                        # Check for successful reaction
+                        if 'data' in result:
+                            self.errors = 0  # Reset error count on success
+                            return True, f"✓ {reaction_type}"
+                        
+                        return True, "✓ Sent"
+                        
+                    except json.JSONDecodeError:
+                        # Sometimes successful reactions don't return JSON
+                        if response.status_code == 200:
+                            return True, f"✓ {reaction_type}"
+                        return False, "❌ Invalid response"
+                else:
+                    return False, f"❌ HTTP {response.status_code}"
                     
-                    # Check for successful reaction
-                    if 'data' in result:
-                        return True, f"✓ Reacted with {reaction_type}"
-                    
-                    return True, "Reaction sent"
-                    
-                except json.JSONDecodeError:
-                    # Sometimes successful reactions don't return JSON
-                    if response.status_code == 200:
-                        return True, f"✓ Reacted with {reaction_type}"
-                    return False, "Invalid response"
-            else:
-                return False, f"HTTP {response.status_code}"
-                
-        except requests.exceptions.Timeout:
-            return False, "Timeout"
-        except Exception as e:
-            return False, f"Error: {str(e)[:50]}"
+            except requests.exceptions.Timeout:
+                return False, "❌ Timeout"
+            except Exception as e:
+                return False, f"❌ {str(e)[:40]}"
+        
+        return False, "❌ All doc_ids failed"
 
 def worker(cookie, post_id, reaction_type, thread_id):
-    """Worker function for threading"""
+    """Worker function with error tracking"""
     try:
         fb = FBAutoReact(cookie)
         
         if not fb.user_id:
-            return thread_id, False, f"[{thread_id}] Invalid cookie"
+            return thread_id, False, f"[{thread_id}] ❌ Invalid cookie - No user ID", "INVALID_COOKIE"
         
         if not fb.initialized:
-            return thread_id, False, f"[{thread_id}] [{fb.user_id}] Failed to get tokens"
+            return thread_id, False, f"[{thread_id}] [{fb.user_id}] ❌ Login failed", "LOGIN_FAILED"
         
         # React to post
         success, message = fb.react_to_post(post_id, reaction_type)
         
         status = f"[{thread_id}] [{fb.user_id}] {message}"
-        return thread_id, success, status
+        error_type = None if success else "REACTION_FAILED"
+        
+        return thread_id, success, status, error_type
         
     except Exception as e:
-        return thread_id, False, f"[{thread_id}] Error: {str(e)[:80]}"
+        return thread_id, False, f"[{thread_id}] ❌ Exception: {str(e)[:60]}", "EXCEPTION"
 
 def banner():
     print("""
 ╔════════════════════════════════════════════╗
-║     FB Auto React - Fixed Version         ║
-║     Latest API with Payload Support       ║
+║  FB Auto React - Fixed GraphQL Doc ID     ║
+║  With Scraping Detection Handler          ║
+║  Error Tracking & Auto-Recovery           ║
 ╚════════════════════════════════════════════╝
     """)
 
@@ -304,16 +292,13 @@ def extract_post_id(url_or_id):
     if url_or_id.isdigit() or '_' in url_or_id:
         return url_or_id
     
-    # Parse URL
     try:
         parsed = urlparse(url_or_id)
         params = parse_qs(parsed.query)
         
         # Format: ?story_fbid=X&id=Y
         if 'story_fbid' in params and 'id' in params:
-            story_fbid = params['story_fbid'][0]
-            page_id = params['id'][0]
-            return f"{page_id}_{story_fbid}"
+            return f"{params['id'][0]}_{params['story_fbid'][0]}"
         
         # Format: /posts/X
         if '/posts/' in url_or_id:
@@ -339,7 +324,7 @@ def extract_post_id(url_or_id):
 
 def get_cookies():
     """Get cookies from user"""
-    print("\n[*] Enter cookies (one per line, empty line to finish):")
+    print("\n[*] Enter cookies (empty line when done):")
     print("[*] Format: datr=xxx;sb=xxx;c_user=xxx;xs=xxx")
     print()
     
@@ -349,15 +334,14 @@ def get_cookies():
         if not cookie:
             if cookies:
                 break
-            else:
-                continue
+            continue
         
         if 'c_user=' not in cookie:
-            print("[!] Invalid cookie - must contain c_user")
+            print("   ❌ Invalid - must contain c_user")
             continue
         
         cookies.append(cookie)
-        print(f"[+] Added!")
+        print("   ✓ Added!")
     
     return cookies
 
@@ -368,29 +352,29 @@ def main():
     cookies = get_cookies()
     
     if not cookies:
-        print("[!] No cookies provided!")
+        print("\n❌ No cookies provided!")
         return
     
-    print(f"\n[+] Loaded {len(cookies)} cookie(s)")
+    print(f"\n✓ Loaded {len(cookies)} cookie(s)")
     
     # Get post
-    print("\n[*] Paste Facebook post URL or ID:")
+    print("\n[*] Enter Facebook post URL or ID:")
     print("   Example: https://www.facebook.com/61569634753113/posts/pfbid02S5uMn/")
     post_input = input("\n[?] Post: ").strip()
     
     if not post_input:
-        print("[!] Post required!")
+        print("\n❌ Post required!")
         return
     
     post_id = extract_post_id(post_input)
-    print(f"[+] Post ID: {post_id}")
+    print(f"✓ Post ID: {post_id}")
     
     # Reaction selection
-    print("\n[*] Reactions:")
+    print("\n[*] Select Reaction:")
     print("1.👍 LIKE  2.❤️ LOVE  3.🤗 CARE  4.😂 HAHA")
     print("5.😮 WOW   6.😢 SAD   7.😡 ANGRY")
     
-    choice = input("\n[?] Select (1-7): ").strip() or '1'
+    choice = input("\n[?] Choose (1-7): ").strip() or '1'
     reactions = {
         '1': 'LIKE', '2': 'LOVE', '3': 'CARE',
         '4': 'HAHA', '5': 'WOW', '6': 'SAD', '7': 'ANGRY'
@@ -401,16 +385,22 @@ def main():
     threads = input("[?] Threads (1-10): ").strip() or '5'
     threads = min(int(threads), 10)
     
-    print("\n" + "="*50)
-    print(f"[+] Starting...")
-    print(f"[+] Post: {post_id}")
-    print(f"[+] Reaction: {reaction}")
-    print(f"[+] Accounts: {len(cookies)}")
-    print(f"[+] Threads: {threads}")
-    print("="*50 + "\n")
+    print("\n" + "="*60)
+    print(f"Starting Auto React...")
+    print(f"Post: {post_id}")
+    print(f"Reaction: {reaction}")
+    print(f"Accounts: {len(cookies)}")
+    print(f"Threads: {threads}")
+    print("="*60 + "\n")
     
     success = 0
     failed = 0
+    errors = {
+        'INVALID_COOKIE': 0,
+        'LOGIN_FAILED': 0,
+        'REACTION_FAILED': 0,
+        'EXCEPTION': 0
+    }
     
     with ThreadPoolExecutor(max_workers=threads) as executor:
         futures = [
@@ -419,24 +409,37 @@ def main():
         ]
         
         for future in as_completed(futures):
-            tid, ok, msg = future.result()
+            tid, ok, msg, error_type = future.result()
             print(msg)
             
             if ok:
                 success += 1
             else:
                 failed += 1
+                if error_type:
+                    errors[error_type] += 1
     
-    print("\n" + "="*50)
+    # Summary
+    print("\n" + "="*60)
+    print("SUMMARY")
+    print("="*60)
     print(f"✓ Success: {success}")
     print(f"✗ Failed: {failed}")
     print(f"Total: {len(cookies)}")
-    print("="*50)
+    print(f"Success Rate: {(success/len(cookies)*100):.1f}%")
+    
+    if failed > 0:
+        print("\n[Error Breakdown]")
+        for error_type, count in errors.items():
+            if count > 0:
+                print(f"  - {error_type}: {count}")
+    
+    print("="*60)
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n[!] Stopped by user")
+        print("\n\n❌ Stopped by user")
     except Exception as e:
-        print(f"\n[!] Error: {str(e)}")
+        print(f"\n❌ Fatal error: {str(e)}")
