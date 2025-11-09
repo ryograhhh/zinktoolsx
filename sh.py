@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Facebook Auto React Tool v4.1 - With User Info Display
-Shows UID and Name when cookie loads successfully
+Facebook Auto React Tool v5.0 - Enhanced Edition
+- Fixed scraping detection
+- Enhanced payload structure
+- Error code 1357004 handling (renew_values)
+- Better token refresh mechanism
 """
 
 import requests
@@ -24,24 +27,31 @@ class FBAutoReact:
         self.jazoest = None
         self.lsd = None
         self.revision = None
+        self.spin_r = None
+        self.spin_b = None
+        self.spin_t = None
+        self.hsi = None
         self.api_packs = None
         self.errors = 0
         self.max_errors = 3
         
         self.session.headers.update({
             'authority': 'www.facebook.com',
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'accept': '*/*',
             'accept-language': 'en-US,en;q=0.9',
             'cache-control': 'no-cache',
+            'content-type': 'application/x-www-form-urlencoded',
+            'origin': 'https://www.facebook.com',
+            'referer': 'https://www.facebook.com/',
             'sec-ch-ua': '"Chromium";v="122", "Not(A:Brand";v="24"',
             'sec-ch-ua-mobile': '?0',
             'sec-ch-ua-platform': '"Windows"',
-            'sec-fetch-dest': 'document',
-            'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'none',
-            'sec-fetch-user': '?1',
-            'upgrade-insecure-requests': '1',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'x-asbd-id': '129477',
+            'x-fb-friendly-name': 'CometUFIFeedbackReactMutation',
             'cookie': self.cookie
         })
         
@@ -83,7 +93,6 @@ class FBAutoReact:
     def extract_user_name(self, html):
         """Extract user name from Facebook page"""
         try:
-            # Multiple patterns to extract name
             patterns = [
                 r'"NAME":"([^"]+)"',
                 r'"name":"([^"]+)"[^}]*"__typename":"User"',
@@ -96,18 +105,15 @@ class FBAutoReact:
                 match = re.search(pattern, html)
                 if match:
                     name = match.group(1)
-                    # Unescape unicode
                     try:
                         name = name.encode().decode('unicode_escape')
                     except:
                         pass
                     return name
             
-            # Try from meta tag
             meta_match = re.search(r'<title>([^<]+)</title>', html)
             if meta_match:
                 title = meta_match.group(1)
-                # Remove " | Facebook" suffix
                 name = title.replace(' | Facebook', '').strip()
                 if name and len(name) < 100:
                     return name
@@ -117,8 +123,79 @@ class FBAutoReact:
         
         return "Unknown User"
     
+    def fix_scraping_detection(self, html):
+        """Fix scraping detection if detected"""
+        try:
+            if 'FBScrapingWarningCometApp.entrypoint' in html or '"entrypoint":"FBScrapingWarningCometApp' in html:
+                print(f"[DEBUG] ⚠️  Scraping detection found, attempting fix...")
+                
+                # Extract challenge data
+                challenge_match = re.search(r'"challengeData":\s*({[^}]+})', html)
+                if challenge_match:
+                    print(f"[DEBUG] Found challenge data, processing...")
+                    
+                    # Try to get fresh tokens
+                    time.sleep(2)
+                    response = self.session.get('https://www.facebook.com/', timeout=30)
+                    
+                    if response.status_code == 200:
+                        new_html = response.text
+                        if 'FBScrapingWarningCometApp' not in new_html:
+                            print(f"[DEBUG] ✓ Scraping detection fixed!")
+                            return True, new_html
+                
+                print(f"[DEBUG] ❌ Could not fix scraping detection automatically")
+                return False, html
+            
+            return True, html
+            
+        except Exception as e:
+            print(f"[DEBUG] Fix scraping error: {str(e)}")
+            return False, html
+    
+    def get_payload_data(self, html):
+        """Extract enhanced payload data from page"""
+        payload_data = {
+            'av': self.user_id,
+            '__user': self.user_id,
+            '__a': '1',
+            '__req': hex(random.randint(1, 99))[2:],
+            '__hs': str(int(time.time())),
+            '__rev': self.revision or '1000000',
+            '__comet_req': '15',
+            'fb_dtsg': self.fb_dtsg,
+            'jazoest': self.jazoest,
+            'lsd': self.lsd or '',
+        }
+        
+        # Extract additional spin values
+        try:
+            spin_r_match = re.search(r'"__spin_r":(\d+)', html)
+            if spin_r_match:
+                self.spin_r = spin_r_match.group(1)
+                payload_data['__spin_r'] = self.spin_r
+            
+            spin_b_match = re.search(r'"__spin_b":"([^"]+)"', html)
+            if spin_b_match:
+                self.spin_b = spin_b_match.group(1)
+                payload_data['__spin_b'] = self.spin_b
+            
+            spin_t_match = re.search(r'"__spin_t":(\d+)', html)
+            if spin_t_match:
+                self.spin_t = spin_t_match.group(1)
+                payload_data['__spin_t'] = self.spin_t
+            
+            hsi_match = re.search(r'"hsi":"([^"]+)"', html)
+            if hsi_match:
+                self.hsi = hsi_match.group(1)
+                payload_data['__hsi'] = self.hsi
+        except:
+            pass
+        
+        return payload_data
+    
     def login(self):
-        """Login and get tokens + user info"""
+        """Enhanced login with scraping detection fix"""
         if not self.user_id:
             print("[DEBUG] ❌ No c_user in cookie")
             return False
@@ -126,7 +203,6 @@ class FBAutoReact:
         try:
             print(f"[DEBUG] Loading cookie for UID: {self.user_id}...")
             
-            # Get main page
             response = self.session.get(
                 'https://www.facebook.com/',
                 timeout=30,
@@ -138,6 +214,11 @@ class FBAutoReact:
                 return False
             
             html = response.text
+            
+            # Check scraping detection
+            scraping_ok, html = self.fix_scraping_detection(html)
+            if not scraping_ok:
+                print(f"[DEBUG] ⚠️  Scraping detection active, continuing anyway...")
             
             # Check if logged in
             if 'login' in response.url.lower() or 'checkpoint' in response.url.lower():
@@ -166,7 +247,6 @@ class FBAutoReact:
             
             if not self.fb_dtsg:
                 print("[DEBUG] ❌ Failed to extract fb_dtsg")
-                # Try fallback method
                 return self.fallback_token_extraction()
             
             # Extract LSD
@@ -195,11 +275,8 @@ class FBAutoReact:
                 self.jazoest = '2' + str(sum(ord(c) for c in self.user_id))
                 print(f"[DEBUG] ✓ Generated jazoest")
             
-            # Update headers for GraphQL
-            self.session.headers.update({
-                'content-type': 'application/x-www-form-urlencoded',
-                'x-fb-friendly-name': 'CometUFIFeedbackReactMutation'
-            })
+            # Get payload data
+            self.get_payload_data(html)
             
             success = bool(self.fb_dtsg and self.user_id)
             
@@ -237,7 +314,6 @@ class FBAutoReact:
                         self.fb_dtsg = data['payload']['token']
                         print(f"[DEBUG] ✓ Got fb_dtsg from fallback: {self.fb_dtsg[:20]}...")
                         
-                        # Generate jazoest
                         if self.user_id:
                             self.jazoest = '2' + str(sum(ord(c) for c in self.user_id))
                         
@@ -252,45 +328,69 @@ class FBAutoReact:
             print(f"[DEBUG] Fallback error: {str(e)}")
             return False
     
-    def handle_new_packs_error(self, api_packs):
-        """Handle new_packs error"""
+    def handle_error_1357004(self):
+        """Handle error 1357004 - renew_values"""
         try:
-            print(f"[DEBUG] Handling new_packs error...")
-            self.api_packs = api_packs
+            print(f"[DEBUG] Handling error 1357004 (renew_values)...")
             self.errors = 0
             
-            if self.login():
-                print("[DEBUG] ✓ Re-logged in successfully")
+            # Force re-login to get fresh tokens
+            response = self.session.get('https://www.facebook.com/', timeout=30)
+            
+            if response.status_code == 200:
+                html = response.text
+                
+                # Re-extract tokens
+                dtsg_match = re.search(r'"DTSGInitialData"[^}]*"token":"([^"]+)"', html)
+                if dtsg_match:
+                    self.fb_dtsg = dtsg_match.group(1)
+                    print(f"[DEBUG] ✓ Got new fb_dtsg")
+                
+                lsd_match = re.search(r'"LSD"[^}]*"token":"([^"]+)"', html)
+                if lsd_match:
+                    self.lsd = lsd_match.group(1)
+                    self.session.headers['x-fb-lsd'] = self.lsd
+                    print(f"[DEBUG] ✓ Got new LSD")
+                
+                rev_match = re.search(r'"__rev":(\d+)', html)
+                if rev_match:
+                    self.revision = rev_match.group(1)
+                    print(f"[DEBUG] ✓ Got new revision")
+                
+                # Get new payload data
+                self.get_payload_data(html)
+                
+                print("[DEBUG] ✓ Tokens renewed successfully")
                 return True
             
             return False
             
         except Exception as e:
-            print(f"[DEBUG] handle_new_packs error: {str(e)}")
+            print(f"[DEBUG] handle_error_1357004 error: {str(e)}")
             return False
     
-    def get_feedback_id(self, post_url_or_id):
+    def get_feedback_id(self, post_link):
         """Enhanced feedback ID extraction"""
         try:
-            post_url_or_id = str(post_url_or_id).strip()
+            post_link = str(post_link).strip()
             
             # Already in correct format
-            if '_' in post_url_or_id and post_url_or_id.replace('_', '').isdigit():
-                if len(post_url_or_id) > 15:
-                    return post_url_or_id
+            if '_' in post_link and post_link.replace('_', '').isdigit():
+                if len(post_link) > 15:
+                    return post_link
             
-            if post_url_or_id.isdigit() and len(post_url_or_id) >= 15:
-                return post_url_or_id
+            if post_link.isdigit() and len(post_link) >= 15:
+                return post_link
             
             # Build full URL
-            if not post_url_or_id.startswith('http'):
-                if 'pfbid' in post_url_or_id:
-                    post_url_or_id = f'https://www.facebook.com/permalink.php?story_fbid={post_url_or_id}'
+            if not post_link.startswith('http'):
+                if 'pfbid' in post_link:
+                    post_link = f'https://www.facebook.com/permalink.php?story_fbid={post_link}'
                 else:
-                    post_url_or_id = f'https://www.facebook.com/{post_url_or_id}'
+                    post_link = f'https://www.facebook.com/{post_link}'
             
             # Parse URL parameters
-            parsed = urlparse(post_url_or_id)
+            parsed = urlparse(post_link)
             params = parse_qs(parsed.query)
             
             # story_fbid + id format
@@ -298,10 +398,10 @@ class FBAutoReact:
                 return f"{params['id'][0]}_{params['story_fbid'][0]}"
             
             # Fetch page
-            response = self.session.get(post_url_or_id, timeout=30, allow_redirects=True)
+            response = self.session.get(post_link, timeout=30, allow_redirects=True)
             
             if response.status_code != 200:
-                return post_url_or_id
+                return post_link
             
             html = response.text
             
@@ -328,10 +428,10 @@ class FBAutoReact:
         except Exception as e:
             print(f"[DEBUG] get_feedback_id error: {str(e)}")
         
-        return post_url_or_id
+        return post_link
     
-    def react_to_post(self, post_id, reaction_type='LIKE'):
-        """React to post with proper error handling"""
+    def react_to_post(self, post_link, reaction_type='LIKE'):
+        """Enhanced react with proper payload and error handling"""
         
         reaction_map = {
             'LIKE': '1635855486666999',
@@ -344,7 +444,7 @@ class FBAutoReact:
         }
         
         reaction_id = reaction_map.get(reaction_type.upper(), reaction_map['LIKE'])
-        feedback_id = self.get_feedback_id(post_id)
+        feedback_id = self.get_feedback_id(post_link)
         
         # Latest working doc_ids
         doc_ids = [
@@ -372,7 +472,7 @@ class FBAutoReact:
                     "scale": 1
                 }
                 
-                # Build payload
+                # Build enhanced payload with all extracted data
                 payload = {
                     'av': self.user_id,
                     '__user': self.user_id,
@@ -383,7 +483,6 @@ class FBAutoReact:
                     '__csr': '',
                     '__rev': self.revision if self.revision else '1000000',
                     '__s': '',
-                    '__hsi': '',
                     '__comet_req': '15',
                     'fb_dtsg': self.fb_dtsg,
                     'jazoest': self.jazoest,
@@ -394,6 +493,16 @@ class FBAutoReact:
                     'server_timestamps': 'true',
                     'doc_id': doc_id
                 }
+                
+                # Add optional payload fields
+                if self.spin_r:
+                    payload['__spin_r'] = self.spin_r
+                if self.spin_b:
+                    payload['__spin_b'] = self.spin_b
+                if self.spin_t:
+                    payload['__spin_t'] = self.spin_t
+                if self.hsi:
+                    payload['__hsi'] = self.hsi
                 
                 response = self.session.post(
                     'https://www.facebook.com/api/graphql/',
@@ -414,18 +523,26 @@ class FBAutoReact:
                             error_msg = error.get('message', '')
                             error_code = error.get('code', 0)
                             
+                            # Handle error 1357004 - renew_values
                             if error_code == 1357004:
-                                return False, "❌ Invalid request"
+                                if self.errors < self.max_errors:
+                                    self.errors += 1
+                                    print(f"[DEBUG] Error 1357004 detected, renewing tokens...")
+                                    
+                                    if self.handle_error_1357004():
+                                        time.sleep(1)
+                                        return self.react_to_post(post_link, reaction_type)
+                                
+                                return False, "❌ Tokens expired (1357004)"
                             
                             # Handle renew_values / new_packs
                             if 'renew_values' in error_msg.lower() or 'new_packs' in error_msg.lower():
                                 if self.errors < self.max_errors:
                                     self.errors += 1
-                                    api_packs = error.get('packs', None)
                                     
-                                    if self.handle_new_packs_error(api_packs):
+                                    if self.handle_error_1357004():
                                         time.sleep(1)
-                                        return self.react_to_post(post_id, reaction_type)
+                                        return self.react_to_post(post_link, reaction_type)
                                 
                                 return False, "❌ Session expired"
                             
@@ -475,7 +592,7 @@ class FBAutoReact:
         
         return False, "❌ All attempts failed"
 
-def worker(cookie, post_id, reaction_type, thread_id):
+def worker(cookie, post_link, reaction_type, thread_id):
     """Worker function"""
     try:
         fb = FBAutoReact(cookie)
@@ -486,7 +603,7 @@ def worker(cookie, post_id, reaction_type, thread_id):
         if not fb.initialized:
             return thread_id, False, f"[{thread_id}] [{fb.user_id}] ❌ Login failed", "LOGIN_FAILED", fb.user_id, fb.user_name
         
-        success, message = fb.react_to_post(post_id, reaction_type)
+        success, message = fb.react_to_post(post_link, reaction_type)
         status = f"[{thread_id}] [{fb.user_id}] [{fb.user_name}] {message}"
         error_type = None if success else "REACTION_FAILED"
         
@@ -498,44 +615,13 @@ def worker(cookie, post_id, reaction_type, thread_id):
 def banner():
     print("""
 ╔═══════════════════════════════════════════════════════╗
-║  FB Auto React v4.1 - With User Info Display         ║
-║  ✓ Shows UID and Name when cookie loads              ║
-║  ✓ Better login verification                         ║
-║  ✓ Enhanced error messages                           ║
+║  FB Auto React v5.0 - Enhanced Edition                ║
+║  ✓ Fixed scraping detection                           ║
+║  ✓ Enhanced payload structure                         ║
+║  ✓ Error 1357004 handling (renew_values)              ║
+║  ✓ Better token refresh mechanism                     ║
 ╚═══════════════════════════════════════════════════════╝
     """)
-
-def extract_post_id(url_or_id):
-    """Extract post ID from URL"""
-    url_or_id = url_or_id.strip()
-    
-    if url_or_id.replace('_', '').isdigit() or url_or_id.startswith('pfbid'):
-        return url_or_id
-    
-    try:
-        parsed = urlparse(url_or_id)
-        params = parse_qs(parsed.query)
-        
-        if 'story_fbid' in params and 'id' in params:
-            return f"{params['id'][0]}_{params['story_fbid'][0]}"
-        
-        if '/posts/' in url_or_id:
-            match = re.search(r'/posts/([^/?&]+)', url_or_id)
-            if match:
-                return match.group(1)
-        
-        if 'pfbid' in url_or_id:
-            match = re.search(r'pfbid[\w]+', url_or_id)
-            if match:
-                return match.group(0)
-        
-        match = re.search(r'(\d{15,})', url_or_id)
-        if match:
-            return match.group(1)
-    except:
-        pass
-    
-    return url_or_id
 
 def get_cookies():
     """Get cookies from user"""
@@ -590,7 +676,7 @@ def main():
     
     print(f"\n✓ Total: {len(cookies)} cookie(s)")
     
-    # Test first cookie to show it's working
+    # Test first cookie
     print("\n[*] Testing first cookie...")
     print("="*70)
     test_fb = FBAutoReact(cookies[0])
@@ -603,19 +689,18 @@ def main():
         return
     print("="*70)
     
-    print("\n[*] Enter post URL or ID:")
+    print("\n[*] Enter post link:")
     print("   Examples:")
     print("   - https://www.facebook.com/PAGE/posts/123456789")
     print("   - https://www.facebook.com/story.php?story_fbid=XXX&id=YYY")
     
-    post_input = input("\n[?] Post: ").strip()
+    post_link = input("\n[?] Post link: ").strip()
     
-    if not post_input:
-        print("\n❌ Post URL/ID required!")
+    if not post_link:
+        print("\n❌ Post link required!")
         return
     
-    post_id = extract_post_id(post_input)
-    print(f"✓ Using: {post_id}")
+    print(f"✓ Using: {post_link}")
     
     print("\n[*] Select Reaction:")
     print("1.👍 LIKE    2.❤️ LOVE    3.🤗 CARE    4.😂 HAHA")
@@ -636,7 +721,7 @@ def main():
     
     print("\n" + "="*70)
     print("Starting Auto React...")
-    print(f"Post: {post_id}")
+    print(f"Post: {post_link}")
     print(f"Reaction: {reaction}")
     print(f"Accounts: {len(cookies)}")
     print(f"Threads: {threads}")
@@ -651,7 +736,7 @@ def main():
     
     with ThreadPoolExecutor(max_workers=threads) as executor:
         futures = [
-            executor.submit(worker, cookie, post_id, reaction, i)
+            executor.submit(worker, cookie, post_link, reaction, i)
             for i, cookie in enumerate(cookies, 1)
         ]
         
@@ -676,33 +761,4 @@ def main():
     print("\n" + "="*70)
     print("FINAL SUMMARY")
     print("="*70)
-    print(f"✓ Successful: {success_count}")
-    print(f"✗ Failed: {failed_count}")
-    print(f"Total Accounts: {len(cookies)}")
-    print(f"Success Rate: {(success_count/len(cookies)*100):.1f}%")
-    print(f"Time: {elapsed_time:.2f}s")
-    
-    if loaded_users:
-        print(f"\n[Loaded Users: {len(loaded_users)}]")
-        for uid, name in loaded_users[:5]:  # Show first 5
-            print(f"  • {uid} - {name}")
-        if len(loaded_users) > 5:
-            print(f"  ... and {len(loaded_users) - 5} more")
-    
-    if failed_count > 0:
-        print("\n[Error Breakdown]")
-        for err_type, count in errors.items():
-            if count > 0:
-                print(f"  - {err_type}: {count}")
-    
-    print("="*70)
-
-if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n\n❌ Interrupted by user")
-    except Exception as e:
-        print(f"\n❌ Critical Error: {str(e)}")
-        import traceback
-        traceback.print_exc()
+    print(f"✓
