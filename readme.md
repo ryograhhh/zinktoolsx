@@ -2,12 +2,12 @@
 
 <div align="center">
 
-![RPWTOOLS Banner](https://img.shields.io/badge/RPWTOOLS-v1.0-red?style=for-the-badge&logo=facebook)
+![RPWTOOLS Banner](https://img.shields.io/badge/RPWTOOLS-v1.0.2-red?style=for-the-badge&logo=facebook)
 [![Python Version](https://img.shields.io/badge/Python-3.8+-blue?style=for-the-badge&logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Active-success?style=for-the-badge)](https://github.com/ryograhhh/zinktoolsx)
+[![Status](https://img.shields.io/badge/Status-Stable-success?style=for-the-badge)](https://github.com/ryograhhh/zinktoolsx)
 
-**A powerful, feature-rich Facebook automation tool for sharing posts with multiple accounts**
+**A powerful, feature-rich Facebook automation tool with ZERO DELAYS and maximum speed sharing**
 
 [Features](#-features) • [Installation](#-installation) • [Usage](#-usage) • [FAQ](#-faq) • [Support](#-support)
 
@@ -18,6 +18,7 @@
 ## 📋 Table of Contents
 
 - [Overview](#-overview)
+- [What's New in v1.0.2](#-whats-new-in-v102)
 - [Features](#-features)
 - [Requirements](#-requirements)
 - [Installation](#-installation)
@@ -34,17 +35,50 @@
 
 ## 🌟 Overview
 
-**RPWTOOLS** is an advanced Facebook automation tool designed to help you efficiently share posts across multiple accounts and pages. Whether you're managing social media campaigns, promoting content, or just need to share posts quickly, RPWTOOLS has got you covered!
+**RPWTOOLS** is an advanced Facebook automation tool designed to help you efficiently share posts across multiple accounts. With the latest v1.0.2 update, we've achieved **MAXIMUM SPEED** with zero delays, enhanced stability, and fixed all critical bugs!
 
 ### Why RPWTOOLS?
 
-- ✨ **Two Powerful Sharing Modes** - Choose between PAGE & NORM or NORM ACCOUNTS only
-- 🚀 **Maximum Speed** - Zero delays for lightning-fast sharing
-- 🔐 **Secure** - Your credentials are safely managed in a database
-- 🎯 **Smart Management** - Paired cookie & token system for reliability
-- 📊 **Statistics Tracking** - Monitor your sharing activity
-- 🔄 **Auto Token Renewal** - Tokens refresh automatically every 5 minutes
+- ⚡ **ZERO DELAYS** - Maximum speed sharing with no waiting time
+- 🔐 **Secure Cookie Database** - Store unlimited cookies with validation
+- 🚀 **Auto Token Renewal** - EAAG tokens refresh every 3 minutes automatically
+- 🛡️ **Restriction Detection** - Automatic warning for restricted accounts
+- 📊 **Statistics Tracking** - Monitor your sharing activity in real-time
+- 🎯 **Two Display Modes** - Minimal (mobile) or Detailed (desktop)
 - 💎 **User-Friendly** - Clean, colorful terminal interface
+- ✅ **FULLY STABLE** - No crashes, no freezing, no problems!
+
+---
+
+## 🎉 What's New in v1.0.2
+
+### 🔥 MAJOR UPDATES
+
+✨ **ZERO DELAYS SHARING**
+- Removed ALL delays for maximum speed performance
+- Shares continue instantly without waiting
+- Lightning-fast parallel multi-account sharing
+
+🛠️ **BUG FIXES**
+- Fixed critical "share_loop() parameter mismatch" error
+- Fixed sharing freezing/stopping unexpectedly
+- Fixed token renewal detection system
+- Fixed asyncio exceptions causing crashes
+- Fixed display mode selection issues
+
+⚡ **PERFORMANCE IMPROVEMENTS**
+- Smart token renewal every 3 minutes automatically
+- Better error recovery - continues sharing even after errors
+- Enhanced cookie validation with restriction detection
+- Faster EAAG token extraction and conversion
+- More accurate share counting and statistics
+
+🎨 **UI ENHANCEMENTS**
+- Two display modes: Minimal Counter or Detailed Logs
+- Automatic restriction detection when adding cookies
+- Real-time warning for restricted accounts
+- Professional color-coded success/error messages
+- Better progress tracking with live counter
 
 ---
 
@@ -54,22 +88,23 @@
 
 | Feature | Description |
 |---------|-------------|
-| 🎭 **Auto Share V1** | Share using both pages and normal accounts with synchronized pausing |
-| 🌐 **Auto Share V2** | Share using normal accounts with EAAG tokens (no pages needed) |
-| 🔑 **Cookie to Token** | Convert Facebook cookies to access tokens easily |
-| 💾 **Database Management** | Store and manage your paired cookies & tokens |
-| 📈 **Statistics** | View your total shares, cooldowns, and account status |
+| 🚀 **Auto Share NORM** | Share using normal accounts with EAAG tokens at MAXIMUM SPEED |
+| 💾 **Cookie Database** | Store and manage unlimited cookies (FREE: 10, MAX: unlimited) |
+| 🔑 **Auto Validation** | Automatic cookie validation with restriction detection |
+| 📈 **Statistics** | View total shares, cooldowns, and account status |
 | 👑 **Admin Panel** | Full management system for administrators |
 | 🔄 **Auto Updates** | Keep your tool up-to-date with latest features |
 
 ### Advanced Features
 
-- **Global Pause System** - All accounts pause together when Facebook limits detected
-- **Smart Error Handling** - Automatically switches strategies on failure
-- **Token Auto-Renewal** - V2 mode renews EAAG tokens every 5 minutes
-- **Multi-Account Support** - Run multiple accounts simultaneously
-- **Plan System** - FREE, VIP, and MAX plans with different cooldowns
-- **Cooldown Management** - Smart cooldown system to prevent bans
+- **ZERO DELAYS** - Maximum speed sharing with no waiting time
+- **Smart Token Renewal** - Auto-renews EAAG tokens every 3 minutes
+- **Restriction Detection** - Warns about restricted accounts before sharing
+- **Multi-Account Support** - Run multiple accounts simultaneously in parallel
+- **Two Display Modes** - Minimal (mobile-friendly) or Detailed (desktop logs)
+- **Plan System** - FREE (10 cookies) and MAX (unlimited cookies) plans
+- **Enhanced Error Handling** - Continues sharing even when errors occur
+- **Real-Time Progress** - Live success counter and status updates
 
 ---
 
@@ -88,6 +123,8 @@ The tool will automatically install these dependencies:
 - `aiohttp` - For async HTTP requests
 - `requests` - For synchronous HTTP requests
 - `asyncio` - For concurrent operations
+- `bcrypt` - For password hashing
+- `jwt` - For authentication tokens
 
 ---
 
@@ -113,7 +150,7 @@ cd zinktoolsx
 pip install -r requirements.txt
 
 # Run the tool
-python rpw.py
+python share.py
 ```
 
 ### For Linux/Mac
@@ -135,7 +172,7 @@ cd zinktoolsx
 pip3 install -r requirements.txt
 
 # Run the tool
-python3 rpw.py
+python3 share.py
 ```
 
 ### For Windows
@@ -148,7 +185,7 @@ python3 rpw.py
 git clone https://github.com/ryograhhh/zinktoolsx.git
 cd zinktoolsx
 pip install -r requirements.txt
-python rpw.py
+python share.py
 ```
 
 ---
@@ -162,76 +199,75 @@ python rpw.py
    Choose option: 02/B (REGISTER)
    Enter your username (minimum 3 characters)
    Enter your password (minimum 6 characters)
-   Provide your Facebook link
-   Confirm your country
+   Provide your Facebook link (will be auto-normalized)
+   Confirm your country (auto-detected)
    ```
 
-2. **Add Paired Accounts**
+2. **Add Cookies to Database**
    ```
-   Choose option: 04/D (MANAGE COOKIE & TOKEN)
-   Select: Add Account
+   Choose option: 02/B (MANAGE COOKIES)
+   Select: Add Cookie
    Paste your Facebook cookie
-   Paste your access token
+   Wait for automatic validation (10-15 seconds)
+   System will detect if account is restricted
    ```
 
 3. **Start Sharing**
    ```
-   Choose option: 01/A (AUTO SHARE) or 02/B (AUTO SHARE V2)
-   Read the warnings carefully
+   Choose option: 01/A (AUTO SHARE)
+   Read the information (3-second countdown)
+   Select cookies to use (or ALL)
    Enter the post link or ID
-   Watch the magic happen! ✨
+   Choose display mode (Minimal or Detailed)
+   Watch the magic happen at MAXIMUM SPEED! ⚡
    ```
 
 ---
 
 ## 🎯 Sharing Modes
 
-### 🔵 Auto Share V1 - PAGE & NORM
+### 🟢 Auto Share - NORM ACCOUNTS (v1.0.2)
 
-**Best for:** Users with Facebook pages or mixed accounts
-
-**Features:**
-- Uses both page tokens and normal account tokens
-- Synchronized global pause system
-- Maximum speed with zero delays
-- Automatic page token extraction
-
-**⚠️ Warning:**
-- NOT recommended for video FB posts
-- Can quickly limit pages and normal accounts
-- Make sure your post is set to PUBLIC
-- Read warnings carefully before proceeding
-
-**Process:**
-1. Reads warnings (5-second countdown)
-2. Confirms with YES/NO prompt
-3. Checks cooldown status
-4. Loads paired accounts from database
-5. Extracts page tokens from accounts
-6. Shares continuously until stopped
-
-### 🟢 Auto Share V2 - NORM ACCOUNTS
-
-**Best for:** Users with normal accounts only (no pages)
+**Best for:** All users with normal Facebook accounts
 
 **Features:**
 - Uses EAAG tokens (business.facebook.com method)
-- Maximum speed with zero delays
-- Auto token renewal every 5 minutes
-- Smart error recovery
+- **ZERO DELAYS** - Maximum speed sharing
+- Auto token renewal every 3 minutes
+- Smart error recovery and handling
+- Restriction detection and warnings
+- Two display modes (Minimal/Detailed)
 
-**ℹ️ Info:**
-- Uses EAAG tokens for stability
-- Best for accounts without pages
-- Tokens auto-renew during sharing
-- Make sure your post is PUBLIC
+**Key Improvements:**
+- ✅ No crashes or freezing
+- ✅ Instant sharing with zero waiting
+- ✅ Automatic token refresh
+- ✅ Better error handling
+- ✅ Real-time progress tracking
 
 **Process:**
 1. Reads information (3-second countdown)
-2. Selects cookies from database
+2. Selects cookies from database (individual or ALL)
 3. Converts cookies to EAAG tokens
-4. Shares continuously with auto-renewal
-5. Handles errors with token refresh
+4. Validates accounts and detects restrictions
+5. Shares continuously at MAXIMUM SPEED
+6. Auto-renews tokens every 3 minutes
+7. Handles errors and continues sharing
+
+**Display Modes:**
+
+**Minimal Mode** (Best for Mobile)
+- Shows only success counter
+- Compact single-line display
+- Updates in place (no scrolling)
+- Perfect for small screens
+
+**Detailed Mode** (Best for Desktop)
+- Shows timestamp for each share
+- Displays account name and UID
+- Shows total success count
+- Full error information
+- Complete sharing logs
 
 ---
 
@@ -241,27 +277,31 @@ python rpw.py
 
 > **💎 Tip:** Always use dump accounts (not your main Facebook account) to avoid losing important data if accounts get restricted.
 
-> **⚡ Tip:** For video posts, consider using V2 mode as it's generally more stable for video content.
+> **⚡ Tip:** Use Minimal display mode on mobile devices for better readability and performance.
 
-> **🔄 Tip:** If you hit limits, wait for the global pause to expire before trying again. Don't rush!
+> **🔄 Tip:** The tool automatically detects and warns about restricted accounts - remove them to improve success rate.
 
-> **📊 Tip:** Check your stats regularly (option 05/E) to monitor cooldowns and account status.
+> **📊 Tip:** Check your stats regularly (option 03/C) to monitor total shares and account status.
+
+> **🚀 Tip:** With ZERO DELAYS, you can achieve extremely high share counts - use responsibly!
 
 ### 🛡️ Security Tips
 
 - Never share your cookies or tokens with others
 - Use strong passwords for your RPWTOOLS account
-- Regularly check your paired accounts for dead cookies
+- Regularly check your cookies for dead/restricted accounts
 - Don't run multiple instances simultaneously
 - Respect Facebook's rate limits
+- Always use dump accounts for safety
 
 ### 🚀 Performance Tips
 
-- Use V1 for maximum page reach
-- Use V2 for normal account stability
-- Keep your cookies fresh (delete dead ones)
-- Upgrade to VIP/MAX for lower cooldowns
-- Monitor blocked cookies and remove them
+- Remove restricted/dead cookies for better performance
+- Use "ALL" option to share with all cookies simultaneously
+- Choose Minimal mode for faster display updates
+- Keep your cookies fresh (delete inactive ones)
+- Upgrade to MAX plan for unlimited cookie storage
+- Monitor the auto token renewal messages
 
 ---
 
@@ -273,7 +313,7 @@ python rpw.py
 
 > **⚠️ WARNING:** Always use dump accounts, NEVER your main Facebook account!
 
-> **⚠️ WARNING:** Video posts may trigger limits faster. Use with caution!
+> **⚠️ WARNING:** ZERO DELAYS means very fast sharing - use with caution to avoid mass restrictions.
 
 > **⚠️ WARNING:** Excessive sharing can lead to temporary or permanent account restrictions.
 
@@ -281,11 +321,13 @@ python rpw.py
 
 > **📌 Note:** Make sure all posts you're sharing are set to PUBLIC visibility.
 
-> **📌 Note:** FREE plan has 5-minute cooldowns. Upgrade for faster access.
+> **📌 Note:** FREE plan allows 10 cookies max. Upgrade to MAX for unlimited storage.
 
-> **📌 Note:** Cookies and tokens expire. Re-add them if they stop working.
+> **📌 Note:** Cookies expire over time. Remove dead cookies and add fresh ones.
 
 > **📌 Note:** The tool requires a stable internet connection to function properly.
+
+> **📌 Note:** Restricted accounts are detected automatically but may not be able to share.
 
 ---
 
@@ -298,7 +340,7 @@ python rpw.py
 
 **Solution:**
 - Check your internet connection
-- Verify the API server is online
+- Verify the API server is online at https://rpwtools.onrender.com
 - Try again in a few minutes
 - Check if your firewall is blocking the connection
 </details>
@@ -311,26 +353,29 @@ python rpw.py
 - Make sure you copied the entire cookie string
 - Delete the old cookie and add a new one
 - Try using a different browser to get the cookie
+- Check if the account is restricted
 </details>
 
 <details>
-<summary><b>🟠 "Cooldown active"</b></summary>
+<summary><b>🟠 "Failed to extract EAAG token"</b></summary>
 
 **Solution:**
-- Wait for the cooldown timer to expire
-- Check your plan limits (FREE: 5min, VIP: 1min, MAX: none)
-- Don't spam the share button
-- Contact admin for plan upgrades
+- Cookie might be expired or invalid
+- Account might be restricted/blocked
+- Try getting a fresh cookie
+- Verify the account can access business.facebook.com
+- Check if account has any security restrictions
 </details>
 
 <details>
-<summary><b>🔵 "Failed to get page tokens"</b></summary>
+<summary><b>🔵 "Account is RESTRICTED warning"</b></summary>
 
 **Solution:**
-- Make sure your account has pages
-- Verify your token has page permissions
-- Try V2 mode if you don't have pages
-- Re-add your cookie and token
+- This is a warning, not an error
+- Restricted accounts may not be able to share
+- Remove the restricted cookie from database
+- Use different accounts that are not restricted
+- This is why we recommend dump accounts!
 </details>
 
 <details>
@@ -338,9 +383,20 @@ python rpw.py
 
 **Solution:**
 - Make sure you're using a valid Facebook post link
-- Try using the post ID directly instead
+- Try using the post ID directly instead of full URL
 - Check if the post is public
-- Use the full URL format
+- Use format: facebook.com/username/posts/123456789
+- Or just use the numeric post ID
+</details>
+
+<details>
+<summary><b>🟤 "FREE plan limit reached (10 cookies)"</b></summary>
+
+**Solution:**
+- You've reached the FREE plan limit of 10 cookies
+- Delete unused/dead cookies to free up space
+- Or upgrade to MAX plan for unlimited cookies
+- Contact admin for plan upgrades
 </details>
 
 ---
@@ -350,16 +406,19 @@ python rpw.py
 ### General Questions
 
 **Q: Is this tool safe to use?**
-A: The tool itself is safe, but Facebook may restrict accounts that violate their ToS. Always use dump accounts!
+A: The tool itself is safe and stable (v1.0.2), but Facebook may restrict accounts that violate their ToS. Always use dump accounts!
 
 **Q: Do I need to pay to use this tool?**
-A: The tool is free! However, there are premium plans (VIP/MAX) for lower cooldowns.
+A: The tool is free! FREE plan includes 10 cookie storage. MAX plan offers unlimited cookies (rental: ₱150/month or ₱250/3 months).
 
-**Q: How many accounts can I add?**
-A: You can add unlimited paired accounts to your database.
+**Q: How many cookies can I add?**
+A: FREE plan: 10 cookies max. MAX plan: Unlimited cookies.
 
-**Q: What's the difference between V1 and V2?**
-A: V1 uses pages + normal accounts, V2 uses only normal accounts with EAAG tokens.
+**Q: What does "ZERO DELAYS" mean?**
+A: It means shares happen instantly without any waiting time between them - maximum speed performance!
+
+**Q: Why do I see restriction warnings?**
+A: The tool automatically detects restricted accounts when you add cookies. This helps you know which accounts might not work.
 
 ### Technical Questions
 
@@ -368,16 +427,23 @@ A:
 1. Open Facebook in your browser
 2. Press F12 to open Developer Tools
 3. Go to Application/Storage > Cookies
-4. Copy the entire cookie value
+4. Find facebook.com and copy all cookie values
+5. Or use a cookie exporter extension
 
-**Q: How do I get an access token?**
-A: Use the Cookie to Token feature (option 03/C) in the tool!
+**Q: What are EAAG tokens?**
+A: EAAG tokens are access tokens extracted from business.facebook.com. They're more stable than regular tokens and auto-renew.
 
-**Q: Why do my tokens expire?**
-A: Facebook tokens expire after some time. V2 mode auto-renews them every 5 minutes.
+**Q: How often do tokens renew?**
+A: Tokens automatically renew every 3 minutes during active sharing sessions.
 
 **Q: Can I run this 24/7?**
-A: Not recommended. Take breaks to avoid detection and limits.
+A: Technically yes, but not recommended. Take breaks to avoid detection and mass restrictions.
+
+**Q: What's the difference between Minimal and Detailed display?**
+A: Minimal shows only success counter (mobile-friendly). Detailed shows full logs with timestamps and account info (desktop-friendly).
+
+**Q: Why was v1.0.2 released?**
+A: To fix critical bugs, remove delays for maximum speed, add restriction detection, and improve overall stability.
 
 ---
 
@@ -462,10 +528,11 @@ If you find this tool helpful, please consider:
 
 Special thanks to:
 
-- All contributors and testers
+- All contributors and testers who helped with v1.0.2
 - The Facebook API community
 - Python async/await ecosystem
-- Everyone who starred this repo ⭐
+- Everyone who reported bugs and suggested features
+- All users who starred this repo ⭐
 
 ---
 
@@ -484,16 +551,44 @@ Special thanks to:
 
 ## 📝 Changelog
 
-### Version 1.0 (Current)
+### Version 1.0.2 (Current) - January 2025
 
-- ✨ Initial release
-- 🎭 Auto Share V1 (PAGE & NORM)
-- 🌐 Auto Share V2 (NORM ACCOUNTS)
-- 🔑 Cookie to Token converter
-- 💾 Database management system
-- 📈 Statistics tracking
-- 👑 Admin panel
-- 🔄 Auto update feature
+**MAJOR UPDATE - FULLY STABLE RELEASE**
+
+✨ **New Features:**
+- ZERO DELAYS - Maximum speed sharing
+- Two display modes (Minimal/Detailed)
+- Automatic restriction detection
+- Enhanced cookie validation
+
+🛠️ **Bug Fixes:**
+- Fixed share_loop parameter mismatch error
+- Fixed sharing freezing/stopping
+- Fixed token renewal system
+- Fixed asyncio exceptions
+- Fixed display mode selection
+
+⚡ **Improvements:**
+- Smart token renewal every 3 minutes
+- Better error recovery
+- Faster EAAG token extraction
+- More accurate statistics
+- Real-time progress tracking
+
+### Version 1.0.1 - December 2024
+
+- Initial stable release
+- Cookie database system
+- Basic auto share functionality
+- Admin panel
+- Statistics tracking
+
+### Version 1.0.0 - December 2024
+
+- Initial beta release
+- Core sharing functionality
+- User authentication
+- Basic UI
 
 ---
 
@@ -501,14 +596,25 @@ Special thanks to:
 
 ### Planned Features
 
-- [ ] Multi-language support
-- [ ] Scheduled sharing
-- [ ] Custom delay options
-- [ ] Post analytics
-- [ ] Export/Import accounts
+- [ ] Multi-language support (English, Filipino, etc.)
+- [ ] Scheduled sharing with timer
+- [ ] Custom delay options for cautious users
+- [ ] Post analytics and insights
+- [ ] Export/Import cookie database
 - [ ] Dark/Light theme toggle
-- [ ] Mobile app version
+- [ ] Mobile app version (Android APK)
 - [ ] Discord bot integration
+- [ ] Webhook notifications
+- [ ] Multiple post sharing queue
+
+### Under Consideration
+
+- [ ] Video post optimization
+- [ ] Story sharing support
+- [ ] Comment automation
+- [ ] React automation
+- [ ] Group posting support
+- [ ] Proxy support
 
 ---
 
@@ -519,6 +625,8 @@ Special thanks to:
 **If you like this project, don't forget to give it a ⭐!**
 
 ---
+
+**🔥 v1.0.2 - FULLY STABLE - ZERO DELAYS - MAXIMUM SPEED 🔥**
 
 **© 2025 RPWTOOLS. All rights reserved.**
 
