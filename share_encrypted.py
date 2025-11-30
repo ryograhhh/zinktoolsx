@@ -6,11 +6,6 @@
 ║     FACEBOOK: https://www.facebook.com/ryoevisu              ║
 ╚══════════════════════════════════════════════════════════════╝
 
-Original file: share.py
-Encryption: PBKDF2-SHA256 (500,000 iterations)
-Encrypted on: 2025-11-30 10:29:37
-Protection: UNBREAKABLE
-
 DO NOT MODIFY THIS FILE!
 Any changes will cause the program to fail.
 """
